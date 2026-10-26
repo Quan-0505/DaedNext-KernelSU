@@ -14,7 +14,12 @@ use crate::packet::{self, IPPROTO_TCP, ParsedPacket};
 use crate::{helpers, maps};
 
 const BPF_ANY: u64 = 0;
+#[cfg(not(feature = "android-fwmark"))]
 const CONTROL_PLANE_SO_MARK: u32 = 0x100;
+// Android stores the network ID in the low 16 bits. Network IDs >= 256
+// overlap the Linux default mark and must not bypass transparent routing.
+#[cfg(feature = "android-fwmark")]
+const CONTROL_PLANE_SO_MARK: u32 = 0x0100_0000;
 const LATENCY_PROBE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-latency\0\0\0\0";
 const GEODATA_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-geodata\0\0\0\0";
 const SUBSCRIPTION_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-subscript\0\0";
@@ -156,18 +161,39 @@ pub fn pid_pname_for_packet(skb: *mut __sk_buff) -> *mut BpfPidPname {
 }
 
 #[inline(always)]
+fn control_plane_mark_present(skb: *mut __sk_buff) -> bool {
+    if (unsafe { (*skb).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK {
+        return true;
+    }
+    // Qualcomm cellular POSTROUTING QoS rules replace skb->mark before TCX.
+    // SO_MARK remains on the originating socket. Do not change vendor rules.
+    #[cfg(feature = "android-fwmark")]
+    {
+        let sk = unsafe { (*skb).__bindgen_anon_2.sk };
+        if !sk.is_null() {
+            #[cfg(target_arch = "bpf")]
+            let sk = unsafe { aya_ebpf::helpers::bpf_sk_fullsock(sk) };
+            if !sk.is_null() {
+                return (unsafe { (*sk).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK;
+            }
+        }
+    }
+    false
+}
+
+#[inline(always)]
 pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) -> bool {
     if !pid_pname.is_null() {
         let pid_tproxy = crate::abi::param_control_plane_pid();
         if pid_tproxy != 0 && unsafe { (*pid_pname).pid } == pid_tproxy {
             return true;
         }
-        if (unsafe { (*skb).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK {
+        if control_plane_mark_present(skb) {
             return unsafe { pid_pname_is_control_helper(pid_pname) };
         }
         return false;
     }
-    (unsafe { (*skb).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK
+    control_plane_mark_present(skb)
 }
 
 #[inline(always)]
@@ -576,6 +602,33 @@ mod tests {
     use super::*;
 
     const HELPER_PARENT_ARGV0_BASENAME: &[u8] = b"daed";
+
+    #[cfg(feature = "android-fwmark")]
+    #[test]
+    fn android_network_id_is_not_control_plane_traffic() {
+        let mut skb: __sk_buff = unsafe { core::mem::zeroed() };
+        for mark in [0x100, 0xc0103, 0xcffff, 0x400c0068] {
+            skb.mark = mark;
+            assert!(!pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
+        }
+        skb.mark = CONTROL_PLANE_SO_MARK | 0xc0103;
+        assert!(pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
+    }
+
+    #[cfg(feature = "android-fwmark")]
+    #[test]
+    fn android_socket_mark_survives_cellular_packet_mark_replacement() {
+        let mut skb: __sk_buff = unsafe { core::mem::zeroed() };
+        let mut sk: aya_ebpf::bindings::bpf_sock = unsafe { core::mem::zeroed() };
+        skb.mark = 0xe15;
+        skb.__bindgen_anon_2.sk = ptr::addr_of_mut!(sk);
+        sk.mark = CONTROL_PLANE_SO_MARK | 0xc0083;
+        assert!(pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
+        for mark in [0, 0xc0083, 0xc0103, 0x400c0083] {
+            sk.mark = mark;
+            assert!(!pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
+        }
+    }
 
     fn process_name(bytes: &[u8]) -> [i8; TASK_COMM_LEN] {
         let mut out = [0; TASK_COMM_LEN];

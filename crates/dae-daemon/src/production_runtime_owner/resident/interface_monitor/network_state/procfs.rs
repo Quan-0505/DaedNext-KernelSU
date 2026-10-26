@@ -6,6 +6,11 @@ use std::path::Path;
 
 use super::{DefaultRouteFingerprint, InterfaceAddressFingerprint, NetworkFamily};
 
+// Route flags are missing from bionic's libc crate; values are ABI-stable
+// (linux/rtnetlink.h).
+const RTF_UP_LOCAL: u32 = 0x0001;
+const RTF_REJECT_LOCAL: u32 = 0x0200;
+
 const IPV6_ADDRESS_UNSTABLE_FLAGS: u32 =
     libc::IFA_F_TEMPORARY | libc::IFA_F_DADFAILED | libc::IFA_F_DEPRECATED | libc::IFA_F_TENTATIVE;
 
@@ -130,7 +135,7 @@ pub(super) fn parse_ipv6_interface_addresses(
 }
 
 fn route_is_usable(flags: u32) -> bool {
-    flags & libc::RTF_UP as u32 != 0 && flags & libc::RTF_REJECT as u32 == 0
+    flags & RTF_UP_LOCAL as u32 != 0 && flags & RTF_REJECT_LOCAL as u32 == 0
 }
 
 fn ipv4_from_proc_hex(raw: &str) -> Result<Ipv4Addr, String> {

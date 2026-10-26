@@ -133,6 +133,10 @@ pub mod native_ebpf_build {
             .arg("--target")
             .arg("bpfel-unknown-none")
             .arg("--release");
+        let mut features = features.to_vec();
+        if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
+            features.push("android-fwmark");
+        }
         if !features.is_empty() {
             command.arg("--features").arg(features.join(","));
         }

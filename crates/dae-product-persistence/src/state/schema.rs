@@ -160,6 +160,12 @@ pub fn apply_state_schema(conn: &Connection) -> io::Result<()> {
     )?;
     ensure_table_column(
         conn,
+        "group_subscriptions",
+        "name_filter_regex",
+        "TEXT NULL",
+    )?;
+    ensure_table_column(
+        conn,
         "systems",
         "running_external_input_version",
         "INTEGER NOT NULL DEFAULT 0",

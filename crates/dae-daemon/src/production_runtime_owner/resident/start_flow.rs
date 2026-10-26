@@ -239,6 +239,47 @@ pub(super) fn start_with_options(
         );
         ok = cgroup_ok;
 
+        let mut resident_lan_routing = Vec::new();
+        let mut resident_routing_apply_cache = ResidentRoutingApplyCache::default();
+        // A phone has only locally originated WAN traffic. The shared routing
+        // maps must be published even when there is no LAN attach loop. Publish
+        // before WAN attach so packets never encounter an empty routing table.
+        if ok && lan_ifaces.is_empty() {
+            let routing_update = native_runtime
+                .loaded_map_id("routing_map")
+                .ok_or_else(|| "WAN-only runtime did not expose routing_map".to_owned())
+                .and_then(|routing_map_id| {
+                    update_existing_resident_routing_map(
+                        routing_map_id,
+                        native_runtime.loaded_map_id("lpm_array_map"),
+                        native_runtime.loaded_map_id("outbound_connectivity_map"),
+                        config,
+                        &geodata,
+                        &mut resident_routing_apply_cache,
+                    )
+                });
+            let routing = match routing_update {
+                Ok((value, id)) => {
+                    discovered_routing_map_ids.push(Some(id));
+                    value
+                }
+                Err(err) => {
+                    ok = false;
+                    json!({"status": "fail", "error": err})
+                }
+            };
+            executed_steps.push(json!({
+                "name": "publish-wan-only-routing-before-attach",
+                "status": if ok { "pass" } else { "fail" },
+                "routing_map_update": routing.clone(),
+            }));
+            resident_lan_routing.push(json!({
+                "interface": Value::Null,
+                "scope": "wan-only",
+                "routing_map_update": routing,
+            }));
+        }
+
         let (wan_ok, resident_wan_attach) = attach_resident_wan_programs(
             &mut executed_steps,
             &interface_attach_options,
@@ -250,8 +291,6 @@ pub(super) fn start_with_options(
         ok = wan_ok;
 
         let mut resident_lan_attach = Vec::new();
-        let mut resident_lan_routing = Vec::new();
-        let mut resident_routing_apply_cache = ResidentRoutingApplyCache::default();
         for iface in &lan_ifaces {
             if ok {
                 let link_layer = match interface_link_layer(iface) {

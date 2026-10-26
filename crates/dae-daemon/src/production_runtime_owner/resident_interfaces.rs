@@ -22,6 +22,7 @@ pub(super) const ARPHRD_CSLIP: u16 = 257;
 pub(super) const ARPHRD_SLIP6: u16 = 258;
 pub(super) const ARPHRD_CSLIP6: u16 = 259;
 pub(super) const ARPHRD_PPP: u16 = 512;
+pub(super) const ARPHRD_RAWIP: u16 = 519;
 pub(super) const ARPHRD_TUNNEL: u16 = 768;
 pub(super) const ARPHRD_TUNNEL6: u16 = 769;
 #[cfg(test)]
@@ -44,7 +45,12 @@ pub(crate) fn resident_interface_validation_checks(
     wan_ifaces: &[String],
 ) -> Vec<Value> {
     let mut checks = Vec::new();
-    let lan_present = !lan_ifaces.iter().all(|iface| iface.trim().is_empty());
+    // Phones have no LAN side to proxy; allow running without one when the
+    // caller opts in explicitly.
+    let lan_optional = std::env::var_os("DAE_ALLOW_EMPTY_LAN")
+        .map(|value| !value.is_empty())
+        .unwrap_or(false);
+    let lan_present = lan_optional || !lan_ifaces.iter().all(|iface| iface.trim().is_empty());
     push_check(
         &mut checks,
         "resident-lan-interface-configured",
@@ -368,7 +374,7 @@ fn configure_resident_wan_accept_ra(
 pub(super) fn link_layer_from_arphrd(arphrd: u16) -> TcAttachLayer {
     match arphrd {
         ARPHRD_SLIP | ARPHRD_CSLIP | ARPHRD_SLIP6 | ARPHRD_CSLIP6 | ARPHRD_PPP | ARPHRD_TUNNEL
-        | ARPHRD_TUNNEL6 | ARPHRD_NONE => TcAttachLayer::L3,
+        | ARPHRD_TUNNEL6 | ARPHRD_RAWIP | ARPHRD_NONE => TcAttachLayer::L3,
         _ => TcAttachLayer::L2,
     }
 }
@@ -431,21 +437,41 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
         .args([family, "-o", "route", "show", "default"])
         .output()
         .map_err(|err| format!("failed to run ip {family} route show default: {err}"))?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        return Err(format!(
-            "ip {family} route show default exited with status {}{}",
-            output.status,
-            if stderr.is_empty() {
-                String::new()
-            } else {
-                format!(": {stderr}")
-            }
-        ));
+    if output.status.success() {
+        let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&output.stdout));
+        if !ifaces.is_empty() {
+            return Ok(ifaces);
+        }
     }
-    Ok(parse_default_route_ifaces(&String::from_utf8_lossy(
-        &output.stdout,
-    )))
+    // Android keeps the default route in per-interface tables, so
+    // `route show default` on the main table is empty. Probe the route that a
+    // real destination would take instead: it resolves to the active WAN
+    // interface for both Wi-Fi (wlan0) and cellular (rmnet_dataN).
+    let probe = if family == "-6" {
+        "2606:4700:4700::1111"
+    } else {
+        "1.1.1.1"
+    };
+    if let Ok(probe_output) = Command::new("ip")
+        .args([family, "-o", "route", "get", probe])
+        .output()
+    {
+        if probe_output.status.success() {
+            let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&probe_output.stdout));
+            if !ifaces.is_empty() {
+                return Ok(ifaces);
+            }
+        }
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    Err(format!(
+        "ip {family} route show default returned no default route{}",
+        if stderr.is_empty() {
+            String::new()
+        } else {
+            format!(": {stderr}")
+        }
+    ))
 }
 
 fn parse_default_route_ifaces(output: &str) -> Vec<String> {
@@ -596,6 +622,8 @@ mod tests {
         assert_eq!(link_layer_from_arphrd(ARPHRD_SLIP6), TcAttachLayer::L3);
         assert_eq!(link_layer_from_arphrd(ARPHRD_CSLIP6), TcAttachLayer::L3);
         assert_eq!(link_layer_from_arphrd(ARPHRD_PPP), TcAttachLayer::L3);
+        assert_eq!(ARPHRD_RAWIP, 519);
+        assert_eq!(link_layer_from_arphrd(ARPHRD_RAWIP), TcAttachLayer::L3);
         assert_eq!(link_layer_from_arphrd(ARPHRD_TUNNEL), TcAttachLayer::L3);
         assert_eq!(link_layer_from_arphrd(ARPHRD_TUNNEL6), TcAttachLayer::L3);
         assert_eq!(link_layer_from_arphrd(ARPHRD_NONE), TcAttachLayer::L3);

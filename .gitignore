@@ -8,3 +8,16 @@
 .DS_Store
 *.swp
 *.swo
+
+# Android generated/runtime inputs and private device material.
+/android/.build/
+/android/dist/
+/android/validation/
+/android/private/
+/android/module/bin/daed
+/android/module/lib/*.so
+/android/module/panel/
+/android/module/assets/*.dat
+/android/module/defaults/daed.db*
+/android/module/build-info.json
+/android/module/SHA256SUMS

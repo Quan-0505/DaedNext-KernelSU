@@ -1,0 +1,34 @@
+#!/system/bin/sh
+MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
+export MODDIR
+. "$MODDIR/scripts/common.sh"
+[ "$(id -u)" = 0 ] || { echo 'Root is required.' >&2; exit 1; }
+case "${1:-status}" in
+ status)
+  state=stopped; pid=null; report=null
+  p=$(daemon_pid) && {
+   state=starting; pid=$p
+   if report=$(ready 1s 2>/dev/null); then state=running
+   elif panel_ready; then state=degraded
+   fi
+  }
+  [ "$state" = stopped ] && [ -f "$STATE/last-error" ] && state=error
+  [ -n "$report" ] || report=null
+  auto=true; [ -f "$STATE/no-autostart" ] && auto=false
+  google=false; [ -f "$STATE/google-network-enabled" ] && google=true
+  iface=$(/system/bin/ip -4 route get 1.1.1.1 2>/dev/null | "$BB" sed -n 's/.* dev \([^ ]*\).*/\1/p' | "$BB" head -1)
+  printf '{"state":"%s","pid":%s,"autostart":%s,"googleNetworkCompat":%s,"interface":"%s","dashboard":"http://127.0.0.1:2023/","readiness":%s}\n' "$state" "$pid" "$auto" "$google" "$iface" "$report"
+  ;;
+ logs) "$BB" tail -n 80 "$STATE/logs/service.log" "$CONFIG/logs/current.jsonl" 2>/dev/null ;;
+ diagnose)
+  "$0" status
+  "$DAEMON" --version
+  /system/bin/uname -a
+  /system/bin/getenforce
+  /system/bin/ip -4 route get 1.1.1.1
+  [ -f "$STATE/last-error" ] && "$BB" cat "$STATE/last-error"
+  "$0" logs
+  ;;
+ start|stop|restart|reload|backup|autostart|google-network) exec /system/bin/sh "$MODDIR/scripts/manage.sh" "$@" ;;
+ *) echo 'Usage: daenextctl {start|stop|restart|reload|status|logs|diagnose|backup|autostart on|off|google-network on|off}' >&2; exit 2 ;;
+esac

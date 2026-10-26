@@ -1,0 +1,6 @@
+
+/android/** text=auto eol=lf
+*.sh text eol=lf
+
+/android/patches/*.patch -whitespace
+/android/module/webroot/kernelsu.js -whitespace

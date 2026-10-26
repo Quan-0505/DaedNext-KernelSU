@@ -115,18 +115,25 @@ pub(super) fn resident_runtime_options(
     })
 }
 
+/// Root for resident runtime artifacts. Android has no writable /run, so the
+/// module entrypoints point this at a directory under /data/adb instead.
+fn runtime_dir_root() -> PathBuf {
+    match std::env::var_os("DAE_RUNTIME_DIR") {
+        Some(value) if !value.is_empty() => PathBuf::from(value),
+        _ => PathBuf::from("/run/daed"),
+    }
+}
+
 pub(super) fn resident_runtime_artifact_dir(pid: u32) -> PathBuf {
-    PathBuf::from("/run/daed/runtime").join(pid.to_string())
+    runtime_dir_root().join("runtime").join(pid.to_string())
 }
 
 fn cleanup_stale_resident_runtime_artifacts(current_artifact_dir: &Path) {
-    let _ = fs::create_dir_all("/run/daed/runtime");
-    cleanup_runtime_artifact_root(Path::new("/run/daed"), "resident-runtime-", None);
-    cleanup_runtime_artifact_root(
-        Path::new("/run/daed/runtime"),
-        "",
-        Some(current_artifact_dir),
-    );
+    let root = runtime_dir_root();
+    let runtime_dir = root.join("runtime");
+    let _ = fs::create_dir_all(&runtime_dir);
+    cleanup_runtime_artifact_root(&root, "resident-runtime-", None);
+    cleanup_runtime_artifact_root(&runtime_dir, "", Some(current_artifact_dir));
 }
 
 fn cleanup_runtime_artifact_root(root: &Path, prefix: &str, current_artifact_dir: Option<&Path>) {

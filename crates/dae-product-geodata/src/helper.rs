@@ -15,7 +15,11 @@ pub const GEODATA_HELPER_MAX_REQUEST_BYTES: usize = 64 * 1024;
 pub const GEODATA_HELPER_MAX_RESPONSE_BYTES: usize = 64 * 1024;
 const GEODATA_HELPER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const GEODATA_HELPER_WAIT_INTERVAL: Duration = Duration::from_millis(20);
+#[cfg(not(target_os = "android"))]
 const GEODATA_HELPER_CONTROL_SO_MARK: u32 = 0x100;
+// Match the Android resident control-plane mark instead of a network ID bit.
+#[cfg(target_os = "android")]
+const GEODATA_HELPER_CONTROL_SO_MARK: u32 = 0x0100_0000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct GeodataPreparedDownload {

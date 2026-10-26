@@ -11,6 +11,10 @@ const BPF_MOV: u8 = 0xb0;
 const BPF_K: u8 = 0x00;
 const BPF_JMP: u8 = 0x05;
 const BPF_EXIT: u8 = 0x90;
+// bionic's libc crate does not export these socket option constants, but the
+// kernel numbers are stable (asm-generic/socket.h).
+const SO_ATTACH_BPF_LOCAL: libc::c_int = 50;
+const SO_DETACH_BPF_LOCAL: libc::c_int = 27;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TemporaryBpfProgramAttachSmoke {
@@ -105,7 +109,7 @@ fn attach_socket_filter(socket_fd: i32, program_fd: i32) -> io::Result<()> {
         libc::setsockopt(
             socket_fd,
             libc::SOL_SOCKET,
-            libc::SO_ATTACH_BPF,
+            SO_ATTACH_BPF_LOCAL,
             (&fd as *const libc::c_int).cast::<libc::c_void>(),
             size_of::<libc::c_int>() as libc::socklen_t,
         )
@@ -122,7 +126,7 @@ fn detach_socket_filter(socket_fd: i32) -> io::Result<()> {
         libc::setsockopt(
             socket_fd,
             libc::SOL_SOCKET,
-            libc::SO_DETACH_BPF,
+            SO_DETACH_BPF_LOCAL,
             (&value as *const libc::c_int).cast::<libc::c_void>(),
             size_of::<libc::c_int>() as libc::socklen_t,
         )

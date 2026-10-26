@@ -1,0 +1,760 @@
+diff --git a/crates/dae-build-support/src/lib.rs b/crates/dae-build-support/src/lib.rs
+index c30990a..e41721d 100644
+--- a/crates/dae-build-support/src/lib.rs
++++ b/crates/dae-build-support/src/lib.rs
+@@ -133,6 +133,10 @@ pub mod native_ebpf_build {
+             .arg("--target")
+             .arg("bpfel-unknown-none")
+             .arg("--release");
++        let mut features = features.to_vec();
++        if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
++            features.push("android-fwmark");
++        }
+         if !features.is_empty() {
+             command.arg("--features").arg(features.join(","));
+         }
+diff --git a/crates/dae-daemon/src/production_runtime_owner/command.rs b/crates/dae-daemon/src/production_runtime_owner/command.rs
+index 7d69ed0..4e3c7d5 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/command.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/command.rs
+@@ -94,7 +94,7 @@ pub(super) fn iface_exists(iface: &str) -> bool {
+ }
+ 
+ pub(super) fn netns_exists(name: &str) -> bool {
+-    ["/var/run/netns", "/run/netns"]
++    ["/var/run/netns", "/run/netns", "/mnt/run/netns", "/mnt/run"]
+         .into_iter()
+         .any(|parent| PathBuf::from(parent).join(name).exists())
+ }
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
+index d30b708..afee07e 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
+@@ -243,6 +243,14 @@ fn observe_wan_network_state_from_paths(
+         &mut routes,
+         &mut errors,
+     );
++    // Android's default routes live in per-network tables. /proc/net/route
++    // exposes only main, while the IPv6 proc table also includes inactive
++    // cellular defaults and dummy0. Match the same policy route used by WAN
++    // auto resolution rather than treating every IPv6 default as active.
++    #[cfg(target_os = "android")]
++    if policy.auto_enabled {
++        routes = android_policy_default_routes();
++    }
+     routes.retain(|route| route.interface != "lo" && policy.route_is_relevant(route));
+     routes.sort();
+     routes.dedup();
+@@ -304,6 +312,47 @@ fn read_routes(
+     }
+ }
+ 
++#[cfg(target_os = "android")]
++fn android_policy_default_routes() -> Vec<DefaultRouteFingerprint> {
++    use std::process::Command;
++    for (flag, destination, family) in [
++        ("-4", "1.1.1.1", NetworkFamily::Ipv4),
++        ("-6", "2606:4700:4700::1111", NetworkFamily::Ipv6),
++    ] {
++        let Ok(output) = Command::new("/system/bin/ip")
++            .args([flag, "route", "get", destination])
++            .output()
++        else {
++            continue;
++        };
++        if !output.status.success() {
++            continue;
++        }
++        let text = String::from_utf8_lossy(&output.stdout);
++        let fields = text.split_whitespace().collect::<Vec<_>>();
++        let Some(interface) = fields.windows(2).find(|pair| pair[0] == "dev").map(|pair| pair[1]) else {
++            continue;
++        };
++        if interface == "lo" || interface == "dummy0" {
++            continue;
++        }
++        let gateway = fields.windows(2)
++            .find(|pair| pair[0] == "via")
++            .and_then(|pair| pair[1].parse::<IpAddr>().ok())
++            .unwrap_or_else(|| match family {
++                NetworkFamily::Ipv4 => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
++                NetworkFamily::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
++            });
++        return vec![DefaultRouteFingerprint {
++            family,
++            interface: interface.to_owned(),
++            gateway,
++            metric: 0,
++        }];
++    }
++    Vec::new()
++}
++
+ fn merge_addresses(
+     target: &mut BTreeMap<String, Vec<InterfaceAddressFingerprint>>,
+     values: BTreeMap<String, Vec<InterfaceAddressFingerprint>>,
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
+index a9e3018..8845837 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
+@@ -6,6 +6,11 @@ use std::path::Path;
+ 
+ use super::{DefaultRouteFingerprint, InterfaceAddressFingerprint, NetworkFamily};
+ 
++// Route flags are missing from bionic's libc crate; values are ABI-stable
++// (linux/rtnetlink.h).
++const RTF_UP_LOCAL: u32 = 0x0001;
++const RTF_REJECT_LOCAL: u32 = 0x0200;
++
+ const IPV6_ADDRESS_UNSTABLE_FLAGS: u32 =
+     libc::IFA_F_TEMPORARY | libc::IFA_F_DADFAILED | libc::IFA_F_DEPRECATED | libc::IFA_F_TENTATIVE;
+ 
+@@ -130,7 +135,7 @@ pub(super) fn parse_ipv6_interface_addresses(
+ }
+ 
+ fn route_is_usable(flags: u32) -> bool {
+-    flags & libc::RTF_UP as u32 != 0 && flags & libc::RTF_REJECT as u32 == 0
++    flags & RTF_UP_LOCAL as u32 != 0 && flags & RTF_REJECT_LOCAL as u32 == 0
+ }
+ 
+ fn ipv4_from_proc_hex(raw: &str) -> Result<Ipv4Addr, String> {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
+index 0350e46..11f3d3f 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
+@@ -115,18 +115,25 @@ pub(super) fn resident_runtime_options(
+     })
+ }
+ 
++/// Root for resident runtime artifacts. Android has no writable /run, so the
++/// module entrypoints point this at a directory under /data/adb instead.
++fn runtime_dir_root() -> PathBuf {
++    match std::env::var_os("DAE_RUNTIME_DIR") {
++        Some(value) if !value.is_empty() => PathBuf::from(value),
++        _ => PathBuf::from("/run/daed"),
++    }
++}
++
+ pub(super) fn resident_runtime_artifact_dir(pid: u32) -> PathBuf {
+-    PathBuf::from("/run/daed/runtime").join(pid.to_string())
++    runtime_dir_root().join("runtime").join(pid.to_string())
+ }
+ 
+ fn cleanup_stale_resident_runtime_artifacts(current_artifact_dir: &Path) {
+-    let _ = fs::create_dir_all("/run/daed/runtime");
+-    cleanup_runtime_artifact_root(Path::new("/run/daed"), "resident-runtime-", None);
+-    cleanup_runtime_artifact_root(
+-        Path::new("/run/daed/runtime"),
+-        "",
+-        Some(current_artifact_dir),
+-    );
++    let root = runtime_dir_root();
++    let runtime_dir = root.join("runtime");
++    let _ = fs::create_dir_all(&runtime_dir);
++    cleanup_runtime_artifact_root(&root, "resident-runtime-", None);
++    cleanup_runtime_artifact_root(&runtime_dir, "", Some(current_artifact_dir));
+ }
+ 
+ fn cleanup_runtime_artifact_root(root: &Path, prefix: &str, current_artifact_dir: Option<&Path>) {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
+index f64f956..f7eb2a3 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
+@@ -239,6 +239,47 @@ pub(super) fn start_with_options(
+         );
+         ok = cgroup_ok;
+ 
++        let mut resident_lan_routing = Vec::new();
++        let mut resident_routing_apply_cache = ResidentRoutingApplyCache::default();
++        // A phone has only locally originated WAN traffic. The shared routing
++        // maps must be published even when there is no LAN attach loop. Publish
++        // before WAN attach so packets never encounter an empty routing table.
++        if ok && lan_ifaces.is_empty() {
++            let routing_update = native_runtime
++                .loaded_map_id("routing_map")
++                .ok_or_else(|| "WAN-only runtime did not expose routing_map".to_owned())
++                .and_then(|routing_map_id| {
++                    update_existing_resident_routing_map(
++                        routing_map_id,
++                        native_runtime.loaded_map_id("lpm_array_map"),
++                        native_runtime.loaded_map_id("outbound_connectivity_map"),
++                        config,
++                        &geodata,
++                        &mut resident_routing_apply_cache,
++                    )
++                });
++            let routing = match routing_update {
++                Ok((value, id)) => {
++                    discovered_routing_map_ids.push(Some(id));
++                    value
++                }
++                Err(err) => {
++                    ok = false;
++                    json!({"status": "fail", "error": err})
++                }
++            };
++            executed_steps.push(json!({
++                "name": "publish-wan-only-routing-before-attach",
++                "status": if ok { "pass" } else { "fail" },
++                "routing_map_update": routing.clone(),
++            }));
++            resident_lan_routing.push(json!({
++                "interface": Value::Null,
++                "scope": "wan-only",
++                "routing_map_update": routing,
++            }));
++        }
++
+         let (wan_ok, resident_wan_attach) = attach_resident_wan_programs(
+             &mut executed_steps,
+             &interface_attach_options,
+@@ -250,8 +291,6 @@ pub(super) fn start_with_options(
+         ok = wan_ok;
+ 
+         let mut resident_lan_attach = Vec::new();
+-        let mut resident_lan_routing = Vec::new();
+-        let mut resident_routing_apply_cache = ResidentRoutingApplyCache::default();
+         for iface in &lan_ifaces {
+             if ok {
+                 let link_layer = match interface_link_layer(iface) {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
+index 5467a8c..e32deef 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
+@@ -22,6 +22,7 @@ pub(super) const ARPHRD_CSLIP: u16 = 257;
+ pub(super) const ARPHRD_SLIP6: u16 = 258;
+ pub(super) const ARPHRD_CSLIP6: u16 = 259;
+ pub(super) const ARPHRD_PPP: u16 = 512;
++pub(super) const ARPHRD_RAWIP: u16 = 519;
+ pub(super) const ARPHRD_TUNNEL: u16 = 768;
+ pub(super) const ARPHRD_TUNNEL6: u16 = 769;
+ #[cfg(test)]
+@@ -44,7 +45,12 @@ pub(crate) fn resident_interface_validation_checks(
+     wan_ifaces: &[String],
+ ) -> Vec<Value> {
+     let mut checks = Vec::new();
+-    let lan_present = !lan_ifaces.iter().all(|iface| iface.trim().is_empty());
++    // Phones have no LAN side to proxy; allow running without one when the
++    // caller opts in explicitly.
++    let lan_optional = std::env::var_os("DAE_ALLOW_EMPTY_LAN")
++        .map(|value| !value.is_empty())
++        .unwrap_or(false);
++    let lan_present = lan_optional || !lan_ifaces.iter().all(|iface| iface.trim().is_empty());
+     push_check(
+         &mut checks,
+         "resident-lan-interface-configured",
+@@ -368,7 +374,7 @@ fn configure_resident_wan_accept_ra(
+ pub(super) fn link_layer_from_arphrd(arphrd: u16) -> TcAttachLayer {
+     match arphrd {
+         ARPHRD_SLIP | ARPHRD_CSLIP | ARPHRD_SLIP6 | ARPHRD_CSLIP6 | ARPHRD_PPP | ARPHRD_TUNNEL
+-        | ARPHRD_TUNNEL6 | ARPHRD_NONE => TcAttachLayer::L3,
++        | ARPHRD_TUNNEL6 | ARPHRD_RAWIP | ARPHRD_NONE => TcAttachLayer::L3,
+         _ => TcAttachLayer::L2,
+     }
+ }
+@@ -431,21 +437,41 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
+         .args([family, "-o", "route", "show", "default"])
+         .output()
+         .map_err(|err| format!("failed to run ip {family} route show default: {err}"))?;
+-    if !output.status.success() {
+-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+-        return Err(format!(
+-            "ip {family} route show default exited with status {}{}",
+-            output.status,
+-            if stderr.is_empty() {
+-                String::new()
+-            } else {
+-                format!(": {stderr}")
++    if output.status.success() {
++        let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&output.stdout));
++        if !ifaces.is_empty() {
++            return Ok(ifaces);
++        }
++    }
++    // Android keeps the default route in per-interface tables, so
++    // `route show default` on the main table is empty. Probe the route that a
++    // real destination would take instead: it resolves to the active WAN
++    // interface for both Wi-Fi (wlan0) and cellular (rmnet_dataN).
++    let probe = if family == "-6" {
++        "2606:4700:4700::1111"
++    } else {
++        "1.1.1.1"
++    };
++    if let Ok(probe_output) = Command::new("ip")
++        .args([family, "-o", "route", "get", probe])
++        .output()
++    {
++        if probe_output.status.success() {
++            let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&probe_output.stdout));
++            if !ifaces.is_empty() {
++                return Ok(ifaces);
+             }
+-        ));
++        }
+     }
+-    Ok(parse_default_route_ifaces(&String::from_utf8_lossy(
+-        &output.stdout,
+-    )))
++    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
++    Err(format!(
++        "ip {family} route show default returned no default route{}",
++        if stderr.is_empty() {
++            String::new()
++        } else {
++            format!(": {stderr}")
++        }
++    ))
+ }
+ 
+ fn parse_default_route_ifaces(output: &str) -> Vec<String> {
+@@ -596,6 +622,8 @@ mod tests {
+         assert_eq!(link_layer_from_arphrd(ARPHRD_SLIP6), TcAttachLayer::L3);
+         assert_eq!(link_layer_from_arphrd(ARPHRD_CSLIP6), TcAttachLayer::L3);
+         assert_eq!(link_layer_from_arphrd(ARPHRD_PPP), TcAttachLayer::L3);
++        assert_eq!(ARPHRD_RAWIP, 519);
++        assert_eq!(link_layer_from_arphrd(ARPHRD_RAWIP), TcAttachLayer::L3);
+         assert_eq!(link_layer_from_arphrd(ARPHRD_TUNNEL), TcAttachLayer::L3);
+         assert_eq!(link_layer_from_arphrd(ARPHRD_TUNNEL6), TcAttachLayer::L3);
+         assert_eq!(link_layer_from_arphrd(ARPHRD_NONE), TcAttachLayer::L3);
+diff --git a/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs b/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
+index 9530970..3e4aaf3 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
+@@ -117,11 +117,23 @@ pub(crate) fn assign_production_netns_id(
+         CommandSpec::new("ip", ["netns", "list-id"]),
+     );
+     let before = parse_used_netns_ids(before_step["stdout"].as_str().unwrap_or_default());
+-    let assign_step = run_observation_step(
++    let mut assign_step = run_observation_step(
+         steps,
+         "assign-production-netns-id-auto",
+         CommandSpec::new("ip", ["netns", "set", PRODUCTION_NETNS, "auto"]),
+     );
++    // Android toybox rejects "auto". A previous generation can retain its
++    // namespace while sockets finish closing, so its id must not be reused.
++    if assign_step["status"].as_str() != Some("pass") && configured_dae_netns_id > 0 {
++        if let Some(id) = unused_explicit_netns_id(&before, configured_dae_netns_id) {
++            let explicit = id.to_string();
++            assign_step = run_observation_step(
++                steps,
++                "assign-production-netns-id-explicit",
++                CommandSpec::new("ip", ["netns", "set", PRODUCTION_NETNS, explicit.as_str()]),
++            );
++        }
++    }
+     if assign_step["status"].as_str() != Some("pass") {
+         steps.push(json!({
+             "name": "assign-production-netns-id-summary",
+@@ -180,6 +192,16 @@ pub(crate) fn new_netns_id_after_auto(
+     after.difference(before).next().copied()
+ }
+ 
++pub(crate) fn unused_explicit_netns_id(used: &BTreeSet<u32>, preferred: u32) -> Option<u32> {
++    let maximum = i32::MAX as u32;
++    if preferred == 0 || preferred > maximum {
++        return None;
++    }
++    (preferred..=maximum)
++        .chain(1..preferred)
++        .find(|id| !used.contains(id))
++}
++
+ pub(crate) fn effective_dae_netns_id(steps: &[Value], requested_dae_netns_id: u32) -> u32 {
+     steps
+         .iter()
+diff --git a/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs b/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs
+index 98fb03e..6e44f20 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs
+@@ -36,4 +36,28 @@ mod tests {
+         let after = BTreeSet::from([49, 50]);
+         assert_eq!(new_netns_id_after_auto(&before, &after), Some(50));
+     }
++
++    #[test]
++    fn explicit_netns_id_skips_namespaces_retained_by_previous_generation() {
++        let before = parse_used_netns_ids("nsid 49\nnsid 50\n");
++        let allocated = unused_explicit_netns_id(&before, 49).unwrap();
++        assert_eq!(allocated, 51);
++        let mut after = before.clone();
++        after.insert(allocated);
++        assert_eq!(new_netns_id_after_auto(&before, &after), Some(51));
++        let steps = vec![json!({
++            "name": "assign-production-netns-id-summary",
++            "status": "pass",
++            "effective_dae_netns_id": allocated,
++        })];
++        assert_eq!(effective_dae_netns_id(&steps, 49), allocated);
++    }
++
++    #[test]
++    fn explicit_netns_id_keeps_free_preference_and_respects_kernel_range() {
++        assert_eq!(unused_explicit_netns_id(&BTreeSet::from([12]), 49), Some(49));
++        assert_eq!(unused_explicit_netns_id(&BTreeSet::from([i32::MAX as u32]), i32::MAX as u32), Some(1));
++        assert_eq!(unused_explicit_netns_id(&BTreeSet::new(), 0), None);
++        assert_eq!(unused_explicit_netns_id(&BTreeSet::new(), u32::MAX), None);
++    }
+ }
+diff --git a/crates/dae-ebpf-program/Cargo.toml b/crates/dae-ebpf-program/Cargo.toml
+index f785608..daa1810 100644
+--- a/crates/dae-ebpf-program/Cargo.toml
++++ b/crates/dae-ebpf-program/Cargo.toml
+@@ -13,6 +13,7 @@ default = ["tproxy-program"]
+ tproxy-program = []
+ pname-core = []
+ trace-program = []
++android-fwmark = []
+ 
+ [dependencies]
+ aya-ebpf.workspace = true
+diff --git a/crates/dae-ebpf-program/src/routing.rs b/crates/dae-ebpf-program/src/routing.rs
+index 6dac30a..00382a5 100644
+--- a/crates/dae-ebpf-program/src/routing.rs
++++ b/crates/dae-ebpf-program/src/routing.rs
+@@ -14,7 +14,12 @@ use crate::packet::{self, IPPROTO_TCP, ParsedPacket};
+ use crate::{helpers, maps};
+ 
+ const BPF_ANY: u64 = 0;
++#[cfg(not(feature = "android-fwmark"))]
+ const CONTROL_PLANE_SO_MARK: u32 = 0x100;
++// Android stores the network ID in the low 16 bits. Network IDs >= 256
++// overlap the Linux default mark and must not bypass transparent routing.
++#[cfg(feature = "android-fwmark")]
++const CONTROL_PLANE_SO_MARK: u32 = 0x0100_0000;
+ const LATENCY_PROBE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-latency\0\0\0\0";
+ const GEODATA_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-geodata\0\0\0\0";
+ const SUBSCRIPTION_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-subscript\0\0";
+@@ -155,6 +160,27 @@ pub fn pid_pname_for_packet(skb: *mut __sk_buff) -> *mut BpfPidPname {
+     .cast::<BpfPidPname>()
+ }
+ 
++#[inline(always)]
++fn control_plane_mark_present(skb: *mut __sk_buff) -> bool {
++    if (unsafe { (*skb).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK {
++        return true;
++    }
++    // Qualcomm cellular POSTROUTING QoS rules replace skb->mark before TCX.
++    // SO_MARK remains on the originating socket. Do not change vendor rules.
++    #[cfg(feature = "android-fwmark")]
++    {
++        let sk = unsafe { (*skb).__bindgen_anon_2.sk };
++        if !sk.is_null() {
++            #[cfg(target_arch = "bpf")]
++            let sk = unsafe { aya_ebpf::helpers::bpf_sk_fullsock(sk) };
++            if !sk.is_null() {
++                return (unsafe { (*sk).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK;
++            }
++        }
++    }
++    false
++}
++
+ #[inline(always)]
+ pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) -> bool {
+     if !pid_pname.is_null() {
+@@ -162,12 +188,12 @@ pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) ->
+         if pid_tproxy != 0 && unsafe { (*pid_pname).pid } == pid_tproxy {
+             return true;
+         }
+-        if (unsafe { (*skb).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK {
++        if control_plane_mark_present(skb) {
+             return unsafe { pid_pname_is_control_helper(pid_pname) };
+         }
+         return false;
+     }
+-    (unsafe { (*skb).mark } & CONTROL_PLANE_SO_MARK) == CONTROL_PLANE_SO_MARK
++    control_plane_mark_present(skb)
+ }
+ 
+ #[inline(always)]
+@@ -577,6 +603,33 @@ mod tests {
+ 
+     const HELPER_PARENT_ARGV0_BASENAME: &[u8] = b"daed";
+ 
++    #[cfg(feature = "android-fwmark")]
++    #[test]
++    fn android_network_id_is_not_control_plane_traffic() {
++        let mut skb: __sk_buff = unsafe { core::mem::zeroed() };
++        for mark in [0x100, 0xc0103, 0xcffff, 0x400c0068] {
++            skb.mark = mark;
++            assert!(!pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
++        }
++        skb.mark = CONTROL_PLANE_SO_MARK | 0xc0103;
++        assert!(pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
++    }
++
++    #[cfg(feature = "android-fwmark")]
++    #[test]
++    fn android_socket_mark_survives_cellular_packet_mark_replacement() {
++        let mut skb: __sk_buff = unsafe { core::mem::zeroed() };
++        let mut sk: aya_ebpf::bindings::bpf_sock = unsafe { core::mem::zeroed() };
++        skb.mark = 0xe15;
++        skb.__bindgen_anon_2.sk = ptr::addr_of_mut!(sk);
++        sk.mark = CONTROL_PLANE_SO_MARK | 0xc0083;
++        assert!(pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
++        for mark in [0, 0xc0083, 0xc0103, 0x400c0083] {
++            sk.mark = mark;
++            assert!(!pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
++        }
++    }
++
+     fn process_name(bytes: &[u8]) -> [i8; TASK_COMM_LEN] {
+         let mut out = [0; TASK_COMM_LEN];
+         for (dst, src) in out.iter_mut().zip(bytes.iter().copied()) {
+diff --git a/crates/dae-ebpf-support/src/aya_loader/netns.rs b/crates/dae-ebpf-support/src/aya_loader/netns.rs
+index 174d2a6..9704c63 100644
+--- a/crates/dae-ebpf-support/src/aya_loader/netns.rs
++++ b/crates/dae-ebpf-support/src/aya_loader/netns.rs
+@@ -56,13 +56,36 @@ impl Drop for NetnsGuard {
+     }
+ }
+ 
++/// Candidate directories holding named network namespaces. Android's toybox
++/// `ip` keeps them under /mnt/run/netns, classic iproute2 uses /var/run/netns.
++fn netns_dirs() -> Vec<PathBuf> {
++    if let Some(dir) = std::env::var_os("DAE_NETNS_DIR") {
++        if !dir.is_empty() {
++            return vec![PathBuf::from(dir)];
++        }
++    }
++    ["/var/run/netns", "/run/netns", "/mnt/run/netns", "/mnt/run"]
++        .into_iter()
++        .map(PathBuf::from)
++        .collect()
++}
++
+ pub(super) fn netns_path(netns: &str) -> PathBuf {
+     let path = Path::new(netns);
+     if path.is_absolute() {
+-        path.to_owned()
+-    } else {
+-        Path::new("/var/run/netns").join(netns)
++        return path.to_owned();
++    }
++    let dirs = netns_dirs();
++    for dir in &dirs {
++        let candidate = dir.join(netns);
++        if candidate.exists() {
++            return candidate;
++        }
+     }
++    dirs.into_iter()
++        .next()
++        .unwrap_or_else(|| PathBuf::from("/var/run/netns"))
++        .join(netns)
+ }
+ 
+ pub(super) fn setns(fd: i32) -> io::Result<()> {
+diff --git a/crates/dae-ebpf-support/src/cgroup.rs b/crates/dae-ebpf-support/src/cgroup.rs
+index f026125..e3b396f 100644
+--- a/crates/dae-ebpf-support/src/cgroup.rs
++++ b/crates/dae-ebpf-support/src/cgroup.rs
+@@ -130,6 +130,23 @@ pub fn dae_cgroup_attach_matrix() -> Vec<DaeCgroupAttachLine> {
+ }
+ 
+ pub fn detect_cgroup2_mount() -> io::Result<PathBuf> {
++    // Android: the vendor network stack already owns the shared cgroup/skb
++    // attach types on the cgroup2 root, so a dae attach there is rejected.
++    // Operators can point the runtime at a subtree that has no conflicting
++    // non-multi attachment (for example /sys/fs/cgroup/apps).
++    if let Some(root) = std::env::var_os("DAE_CGROUP2_ROOT") {
++        let path = PathBuf::from(root);
++        if path.is_dir() {
++            return Ok(path);
++        }
++        return Err(io::Error::new(
++            io::ErrorKind::NotFound,
++            format!(
++                "DAE_CGROUP2_ROOT is not an existing directory: {}",
++                path.display()
++            ),
++        ));
++    }
+     let mounts = fs::read_to_string("/proc/mounts")?;
+     detect_cgroup2_mount_from_proc_mounts(&mounts)
+         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cgroup2 not mounted"))
+diff --git a/crates/dae-ebpf-support/src/temporary_program.rs b/crates/dae-ebpf-support/src/temporary_program.rs
+index 05fa84a..eef7105 100644
+--- a/crates/dae-ebpf-support/src/temporary_program.rs
++++ b/crates/dae-ebpf-support/src/temporary_program.rs
+@@ -11,6 +11,10 @@ const BPF_MOV: u8 = 0xb0;
+ const BPF_K: u8 = 0x00;
+ const BPF_JMP: u8 = 0x05;
+ const BPF_EXIT: u8 = 0x90;
++// bionic's libc crate does not export these socket option constants, but the
++// kernel numbers are stable (asm-generic/socket.h).
++const SO_ATTACH_BPF_LOCAL: libc::c_int = 50;
++const SO_DETACH_BPF_LOCAL: libc::c_int = 27;
+ 
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct TemporaryBpfProgramAttachSmoke {
+@@ -105,7 +109,7 @@ fn attach_socket_filter(socket_fd: i32, program_fd: i32) -> io::Result<()> {
+         libc::setsockopt(
+             socket_fd,
+             libc::SOL_SOCKET,
+-            libc::SO_ATTACH_BPF,
++            SO_ATTACH_BPF_LOCAL,
+             (&fd as *const libc::c_int).cast::<libc::c_void>(),
+             size_of::<libc::c_int>() as libc::socklen_t,
+         )
+@@ -122,7 +126,7 @@ fn detach_socket_filter(socket_fd: i32) -> io::Result<()> {
+         libc::setsockopt(
+             socket_fd,
+             libc::SOL_SOCKET,
+-            libc::SO_DETACH_BPF,
++            SO_DETACH_BPF_LOCAL,
+             (&value as *const libc::c_int).cast::<libc::c_void>(),
+             size_of::<libc::c_int>() as libc::socklen_t,
+         )
+diff --git a/crates/dae-ebpf-support/src/tproxy_listener.rs b/crates/dae-ebpf-support/src/tproxy_listener.rs
+index d991047..544db1f 100644
+--- a/crates/dae-ebpf-support/src/tproxy_listener.rs
++++ b/crates/dae-ebpf-support/src/tproxy_listener.rs
+@@ -96,7 +96,7 @@ pub fn open_transparent_udp_socket_bound(addr: SocketAddr) -> io::Result<UdpSock
+ 
+ fn open_named_netns(name: &str) -> io::Result<File> {
+     let mut last_err = None;
+-    for parent in ["/run/netns", "/var/run/netns"] {
++    for parent in ["/run/netns", "/var/run/netns", "/mnt/run/netns", "/mnt/run"] {
+         match File::open(PathBuf::from(parent).join(name)) {
+             Ok(file) => return Ok(file),
+             Err(err) => last_err = Some(err),
+diff --git a/crates/dae-product-control/src/network.rs b/crates/dae-product-control/src/network.rs
+index 4fe1301..383318c 100644
+--- a/crates/dae-product-control/src/network.rs
++++ b/crates/dae-product-control/src/network.rs
+@@ -120,7 +120,7 @@ pub fn product_control_helper_so_mark() -> io::Result<Option<u32>> {
+     Ok(Some(mark))
+ }
+ 
+-#[cfg(target_os = "linux")]
++#[cfg(any(target_os = "linux", target_os = "android"))]
+ pub fn apply_product_control_helper_socket_mark(
+     socket: &impl std::os::fd::AsRawFd,
+ ) -> io::Result<()> {
+@@ -143,12 +143,12 @@ pub fn apply_product_control_helper_socket_mark(
+     Ok(())
+ }
+ 
+-#[cfg(not(target_os = "linux"))]
++#[cfg(not(any(target_os = "linux", target_os = "android")))]
+ pub fn apply_product_control_helper_socket_mark<T>(_socket: &T) -> io::Result<()> {
+     if product_control_helper_so_mark()?.is_some() {
+         return Err(io::Error::new(
+             io::ErrorKind::Unsupported,
+-            "control helper SO_MARK is only supported on Linux",
++            "control helper SO_MARK is only supported on Linux and Android",
+         ));
+     }
+     Ok(())
+diff --git a/crates/dae-product-geodata/src/helper.rs b/crates/dae-product-geodata/src/helper.rs
+index 260bd1a..a2044a0 100644
+--- a/crates/dae-product-geodata/src/helper.rs
++++ b/crates/dae-product-geodata/src/helper.rs
+@@ -15,7 +15,11 @@ pub const GEODATA_HELPER_MAX_REQUEST_BYTES: usize = 64 * 1024;
+ pub const GEODATA_HELPER_MAX_RESPONSE_BYTES: usize = 64 * 1024;
+ const GEODATA_HELPER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+ const GEODATA_HELPER_WAIT_INTERVAL: Duration = Duration::from_millis(20);
++#[cfg(not(target_os = "android"))]
+ const GEODATA_HELPER_CONTROL_SO_MARK: u32 = 0x100;
++// Match the Android resident control-plane mark instead of a network ID bit.
++#[cfg(target_os = "android")]
++const GEODATA_HELPER_CONTROL_SO_MARK: u32 = 0x0100_0000;
+ 
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct GeodataPreparedDownload {
+diff --git a/crates/dae-product-persistence/src/state/schema.rs b/crates/dae-product-persistence/src/state/schema.rs
+index 7f8f565..6b76e94 100644
+--- a/crates/dae-product-persistence/src/state/schema.rs
++++ b/crates/dae-product-persistence/src/state/schema.rs
+@@ -158,6 +158,12 @@ pub fn apply_state_schema(conn: &Connection) -> io::Result<()> {
+         "use_proxy",
+         "INTEGER NOT NULL DEFAULT 0",
+     )?;
++    ensure_table_column(
++        conn,
++        "group_subscriptions",
++        "name_filter_regex",
++        "TEXT NULL",
++    )?;
+     ensure_table_column(
+         conn,
+         "systems",
+diff --git a/crates/dae-product-subscription/src/helper_process.rs b/crates/dae-product-subscription/src/helper_process.rs
+index 5ad160e..544bd8c 100644
+--- a/crates/dae-product-subscription/src/helper_process.rs
++++ b/crates/dae-product-subscription/src/helper_process.rs
+@@ -15,7 +15,11 @@ use crate::{
+ 
+ const SUBSCRIPTION_HELPER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+ const SUBSCRIPTION_HELPER_WAIT_INTERVAL: Duration = Duration::from_millis(20);
++#[cfg(not(target_os = "android"))]
+ const SUBSCRIPTION_HELPER_CONTROL_SO_MARK: u32 = 0x100;
++// Keep helper traffic outside Android's low 16-bit network ID field.
++#[cfg(target_os = "android")]
++const SUBSCRIPTION_HELPER_CONTROL_SO_MARK: u32 = 0x0100_0000;
+ const SUBSCRIPTION_HELPER_STAGING_DIR: &str = "subscription-helper";
+ const SUBSCRIPTION_PREPARE_HELPER_SO_MARK_ENV: &str = "DAED_CONTROL_HELPER_SO_MARK";
+ 
+diff --git a/crates/dae-resident-model/src/model.rs b/crates/dae-resident-model/src/model.rs
+index 9a19152..dbba3c5 100644
+--- a/crates/dae-resident-model/src/model.rs
++++ b/crates/dae-resident-model/src/model.rs
+@@ -31,13 +31,53 @@ pub use xhttp::{
+     ResidentXhttpPaddingMethod, ResidentXhttpPaddingPlacement, ResidentXhttpSettingsPlan,
+     ResidentXhttpUplinkDataPlacement, ResidentXhttpXmuxPlan,
+ };
++#[cfg(not(target_os = "android"))]
+ pub const RESIDENT_CONTROL_PLANE_SO_MARK: u32 = 0x100;
++#[cfg(target_os = "android")]
++pub const RESIDENT_CONTROL_PLANE_SO_MARK: u32 = 0x0100_0000;
+ 
+ pub fn effective_so_mark_from_dae(configured: u32) -> u32 {
+-    if configured == 0 {
+-        RESIDENT_CONTROL_PLANE_SO_MARK
+-    } else {
+-        configured
++    #[cfg(target_os = "android")]
++    {
++        android_control_socket_mark(configured)
++    }
++    #[cfg(not(target_os = "android"))]
++    {
++        if configured == 0 {
++            RESIDENT_CONTROL_PLANE_SO_MARK
++        } else {
++            configured
++        }
++    }
++}
++
++#[cfg(any(target_os = "android", test))]
++fn android_control_socket_mark(configured: u32) -> u32 {
++    // Bit 30 silently loses UDP on the tested Qualcomm cellular path even
++    // without Dae hooks. Bit 24 preserves both Android netId and UDP delivery.
++    match configured {
++        0 | 0x100 | 0x4000_0000 => 0x0100_0000,
++        mark => mark,
++    }
++}
++
++#[cfg(test)]
++mod android_control_mark_tests {
++    use super::*;
++
++    #[test]
++    fn android_control_mark_migrates_legacy_defaults_without_changing_custom_marks() {
++        for configured in [0, 0x100, 0x4000_0000, 0x0100_0000] {
++            assert_eq!(android_control_socket_mark(configured), 0x0100_0000);
++        }
++        assert_eq!(android_control_socket_mark(0x0200_0000), 0x0200_0000);
++    }
++
++    #[test]
++    #[cfg(not(target_os = "android"))]
++    fn android_control_mark_migration_does_not_change_linux_socket_marks() {
++        assert_eq!(effective_so_mark_from_dae(0), 0x100);
++        assert_eq!(effective_so_mark_from_dae(0x4000_0000), 0x4000_0000);
+     }
+ }
+ 

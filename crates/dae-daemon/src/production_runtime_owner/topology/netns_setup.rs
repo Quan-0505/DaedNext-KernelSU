@@ -117,11 +117,23 @@ pub(crate) fn assign_production_netns_id(
         CommandSpec::new("ip", ["netns", "list-id"]),
     );
     let before = parse_used_netns_ids(before_step["stdout"].as_str().unwrap_or_default());
-    let assign_step = run_observation_step(
+    let mut assign_step = run_observation_step(
         steps,
         "assign-production-netns-id-auto",
         CommandSpec::new("ip", ["netns", "set", PRODUCTION_NETNS, "auto"]),
     );
+    // Android toybox rejects "auto". A previous generation can retain its
+    // namespace while sockets finish closing, so its id must not be reused.
+    if assign_step["status"].as_str() != Some("pass") && configured_dae_netns_id > 0 {
+        if let Some(id) = unused_explicit_netns_id(&before, configured_dae_netns_id) {
+            let explicit = id.to_string();
+            assign_step = run_observation_step(
+                steps,
+                "assign-production-netns-id-explicit",
+                CommandSpec::new("ip", ["netns", "set", PRODUCTION_NETNS, explicit.as_str()]),
+            );
+        }
+    }
     if assign_step["status"].as_str() != Some("pass") {
         steps.push(json!({
             "name": "assign-production-netns-id-summary",
@@ -178,6 +190,16 @@ pub(crate) fn new_netns_id_after_auto(
     after: &BTreeSet<u32>,
 ) -> Option<u32> {
     after.difference(before).next().copied()
+}
+
+pub(crate) fn unused_explicit_netns_id(used: &BTreeSet<u32>, preferred: u32) -> Option<u32> {
+    let maximum = i32::MAX as u32;
+    if preferred == 0 || preferred > maximum {
+        return None;
+    }
+    (preferred..=maximum)
+        .chain(1..preferred)
+        .find(|id| !used.contains(id))
 }
 
 pub(crate) fn effective_dae_netns_id(steps: &[Value], requested_dae_netns_id: u32) -> u32 {

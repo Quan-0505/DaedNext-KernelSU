@@ -15,7 +15,11 @@ use crate::{
 
 const SUBSCRIPTION_HELPER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const SUBSCRIPTION_HELPER_WAIT_INTERVAL: Duration = Duration::from_millis(20);
+#[cfg(not(target_os = "android"))]
 const SUBSCRIPTION_HELPER_CONTROL_SO_MARK: u32 = 0x100;
+// Keep helper traffic outside Android's low 16-bit network ID field.
+#[cfg(target_os = "android")]
+const SUBSCRIPTION_HELPER_CONTROL_SO_MARK: u32 = 0x0100_0000;
 const SUBSCRIPTION_HELPER_STAGING_DIR: &str = "subscription-helper";
 const SUBSCRIPTION_PREPARE_HELPER_SO_MARK_ENV: &str = "DAED_CONTROL_HELPER_SO_MARK";
 

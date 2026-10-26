@@ -120,7 +120,7 @@ pub fn product_control_helper_so_mark() -> io::Result<Option<u32>> {
     Ok(Some(mark))
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 pub fn apply_product_control_helper_socket_mark(
     socket: &impl std::os::fd::AsRawFd,
 ) -> io::Result<()> {
@@ -143,12 +143,12 @@ pub fn apply_product_control_helper_socket_mark(
     Ok(())
 }
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(not(any(target_os = "linux", target_os = "android")))]
 pub fn apply_product_control_helper_socket_mark<T>(_socket: &T) -> io::Result<()> {
     if product_control_helper_so_mark()?.is_some() {
         return Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "control helper SO_MARK is only supported on Linux",
+            "control helper SO_MARK is only supported on Linux and Android",
         ));
     }
     Ok(())

@@ -96,7 +96,7 @@ pub fn open_transparent_udp_socket_bound(addr: SocketAddr) -> io::Result<UdpSock
 
 fn open_named_netns(name: &str) -> io::Result<File> {
     let mut last_err = None;
-    for parent in ["/run/netns", "/var/run/netns"] {
+    for parent in ["/run/netns", "/var/run/netns", "/mnt/run/netns", "/mnt/run"] {
         match File::open(PathBuf::from(parent).join(name)) {
             Ok(file) => return Ok(file),
             Err(err) => last_err = Some(err),

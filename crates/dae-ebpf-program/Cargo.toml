@@ -13,6 +13,7 @@ default = ["tproxy-program"]
 tproxy-program = []
 pname-core = []
 trace-program = []
+android-fwmark = []
 
 [dependencies]
 aya-ebpf.workspace = true

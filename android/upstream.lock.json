@@ -1,0 +1,18 @@
+{
+  "upstream": {
+    "repository": "https://github.com/ksong008/DaeNext.git",
+    "commit": "a87b3416e9ecd746cc47fba7b77eec11b08d3cf3"
+  },
+  "panel": {
+    "repository": "https://github.com/ksong008/DaedNext.git",
+    "commit": "dc4af0e4d9e855e0d6ba6d719a2cc70f0be64327",
+    "pnpm": "10.24.0"
+  },
+  "daemonVersion": "3.1.0-android-ksu.3",
+  "runtimeSeed": {
+    "repository": "Quan-0505/DaeNext-KernelSU",
+    "tag": "v0.1.0-alpha4",
+    "asset": "DaeNext-KernelSU-v0.1.0-alpha4-arm64.zip",
+    "sha256": "4101fa277c5da756d8f91806a4646084e8629b180785def4a983514596c71432"
+  }
+}

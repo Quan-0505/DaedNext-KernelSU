@@ -94,7 +94,7 @@ pub(super) fn iface_exists(iface: &str) -> bool {
 }
 
 pub(super) fn netns_exists(name: &str) -> bool {
-    ["/var/run/netns", "/run/netns"]
+    ["/var/run/netns", "/run/netns", "/mnt/run/netns", "/mnt/run"]
         .into_iter()
         .any(|parent| PathBuf::from(parent).join(name).exists())
 }

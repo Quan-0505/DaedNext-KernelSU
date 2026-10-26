@@ -56,13 +56,36 @@ impl Drop for NetnsGuard {
     }
 }
 
+/// Candidate directories holding named network namespaces. Android's toybox
+/// `ip` keeps them under /mnt/run/netns, classic iproute2 uses /var/run/netns.
+fn netns_dirs() -> Vec<PathBuf> {
+    if let Some(dir) = std::env::var_os("DAE_NETNS_DIR") {
+        if !dir.is_empty() {
+            return vec![PathBuf::from(dir)];
+        }
+    }
+    ["/var/run/netns", "/run/netns", "/mnt/run/netns", "/mnt/run"]
+        .into_iter()
+        .map(PathBuf::from)
+        .collect()
+}
+
 pub(super) fn netns_path(netns: &str) -> PathBuf {
     let path = Path::new(netns);
     if path.is_absolute() {
-        path.to_owned()
-    } else {
-        Path::new("/var/run/netns").join(netns)
+        return path.to_owned();
     }
+    let dirs = netns_dirs();
+    for dir in &dirs {
+        let candidate = dir.join(netns);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    dirs.into_iter()
+        .next()
+        .unwrap_or_else(|| PathBuf::from("/var/run/netns"))
+        .join(netns)
 }
 
 pub(super) fn setns(fd: i32) -> io::Result<()> {

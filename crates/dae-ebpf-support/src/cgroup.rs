@@ -130,6 +130,23 @@ pub fn dae_cgroup_attach_matrix() -> Vec<DaeCgroupAttachLine> {
 }
 
 pub fn detect_cgroup2_mount() -> io::Result<PathBuf> {
+    // Android: the vendor network stack already owns the shared cgroup/skb
+    // attach types on the cgroup2 root, so a dae attach there is rejected.
+    // Operators can point the runtime at a subtree that has no conflicting
+    // non-multi attachment (for example /sys/fs/cgroup/apps).
+    if let Some(root) = std::env::var_os("DAE_CGROUP2_ROOT") {
+        let path = PathBuf::from(root);
+        if path.is_dir() {
+            return Ok(path);
+        }
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "DAE_CGROUP2_ROOT is not an existing directory: {}",
+                path.display()
+            ),
+        ));
+    }
     let mounts = fs::read_to_string("/proc/mounts")?;
     detect_cgroup2_mount_from_proc_mounts(&mounts)
         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cgroup2 not mounted"))

@@ -1,0 +1,60 @@
+diff --git a/crates/dae-product-control/src/network.rs b/crates/dae-product-control/src/network.rs
+index 4fe1301..383318c 100644
+--- a/crates/dae-product-control/src/network.rs
++++ b/crates/dae-product-control/src/network.rs
+@@ -120,7 +120,7 @@ pub fn product_control_helper_so_mark() -> io::Result<Option<u32>> {
+     Ok(Some(mark))
+ }
+ 
+-#[cfg(target_os = "linux")]
++#[cfg(any(target_os = "linux", target_os = "android"))]
+ pub fn apply_product_control_helper_socket_mark(
+     socket: &impl std::os::fd::AsRawFd,
+ ) -> io::Result<()> {
+@@ -143,12 +143,12 @@ pub fn apply_product_control_helper_socket_mark(
+     Ok(())
+ }
+ 
+-#[cfg(not(target_os = "linux"))]
++#[cfg(not(any(target_os = "linux", target_os = "android")))]
+ pub fn apply_product_control_helper_socket_mark<T>(_socket: &T) -> io::Result<()> {
+     if product_control_helper_so_mark()?.is_some() {
+         return Err(io::Error::new(
+             io::ErrorKind::Unsupported,
+-            "control helper SO_MARK is only supported on Linux",
++            "control helper SO_MARK is only supported on Linux and Android",
+         ));
+     }
+     Ok(())
+diff --git a/crates/dae-product-geodata/src/helper.rs b/crates/dae-product-geodata/src/helper.rs
+index 260bd1a..acf72af 100644
+--- a/crates/dae-product-geodata/src/helper.rs
++++ b/crates/dae-product-geodata/src/helper.rs
+@@ -15,7 +15,11 @@ pub const GEODATA_HELPER_MAX_REQUEST_BYTES: usize = 64 * 1024;
+ pub const GEODATA_HELPER_MAX_RESPONSE_BYTES: usize = 64 * 1024;
+ const GEODATA_HELPER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+ const GEODATA_HELPER_WAIT_INTERVAL: Duration = Duration::from_millis(20);
++#[cfg(not(target_os = "android"))]
+ const GEODATA_HELPER_CONTROL_SO_MARK: u32 = 0x100;
++// Match the Android resident control-plane mark instead of a network ID bit.
++#[cfg(target_os = "android")]
++const GEODATA_HELPER_CONTROL_SO_MARK: u32 = 0x4000_0000;
+ 
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct GeodataPreparedDownload {
+diff --git a/crates/dae-product-subscription/src/helper_process.rs b/crates/dae-product-subscription/src/helper_process.rs
+index 5ad160e..ea534e9 100644
+--- a/crates/dae-product-subscription/src/helper_process.rs
++++ b/crates/dae-product-subscription/src/helper_process.rs
+@@ -15,7 +15,11 @@ use crate::{
+ 
+ const SUBSCRIPTION_HELPER_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+ const SUBSCRIPTION_HELPER_WAIT_INTERVAL: Duration = Duration::from_millis(20);
++#[cfg(not(target_os = "android"))]
+ const SUBSCRIPTION_HELPER_CONTROL_SO_MARK: u32 = 0x100;
++// Keep helper traffic outside Android's low 16-bit network ID field.
++#[cfg(target_os = "android")]
++const SUBSCRIPTION_HELPER_CONTROL_SO_MARK: u32 = 0x4000_0000;
+ const SUBSCRIPTION_HELPER_STAGING_DIR: &str = "subscription-helper";
+ const SUBSCRIPTION_PREPARE_HELPER_SO_MARK_ENV: &str = "DAED_CONTROL_HELPER_SO_MARK";
+ 

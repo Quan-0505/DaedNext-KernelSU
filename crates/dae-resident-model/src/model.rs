@@ -31,13 +31,53 @@ pub use xhttp::{
     ResidentXhttpPaddingMethod, ResidentXhttpPaddingPlacement, ResidentXhttpSettingsPlan,
     ResidentXhttpUplinkDataPlacement, ResidentXhttpXmuxPlan,
 };
+#[cfg(not(target_os = "android"))]
 pub const RESIDENT_CONTROL_PLANE_SO_MARK: u32 = 0x100;
+#[cfg(target_os = "android")]
+pub const RESIDENT_CONTROL_PLANE_SO_MARK: u32 = 0x0100_0000;
 
 pub fn effective_so_mark_from_dae(configured: u32) -> u32 {
-    if configured == 0 {
-        RESIDENT_CONTROL_PLANE_SO_MARK
-    } else {
-        configured
+    #[cfg(target_os = "android")]
+    {
+        android_control_socket_mark(configured)
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        if configured == 0 {
+            RESIDENT_CONTROL_PLANE_SO_MARK
+        } else {
+            configured
+        }
+    }
+}
+
+#[cfg(any(target_os = "android", test))]
+fn android_control_socket_mark(configured: u32) -> u32 {
+    // Bit 30 silently loses UDP on the tested Qualcomm cellular path even
+    // without Dae hooks. Bit 24 preserves both Android netId and UDP delivery.
+    match configured {
+        0 | 0x100 | 0x4000_0000 => 0x0100_0000,
+        mark => mark,
+    }
+}
+
+#[cfg(test)]
+mod android_control_mark_tests {
+    use super::*;
+
+    #[test]
+    fn android_control_mark_migrates_legacy_defaults_without_changing_custom_marks() {
+        for configured in [0, 0x100, 0x4000_0000, 0x0100_0000] {
+            assert_eq!(android_control_socket_mark(configured), 0x0100_0000);
+        }
+        assert_eq!(android_control_socket_mark(0x0200_0000), 0x0200_0000);
+    }
+
+    #[test]
+    #[cfg(not(target_os = "android"))]
+    fn android_control_mark_migration_does_not_change_linux_socket_marks() {
+        assert_eq!(effective_so_mark_from_dae(0), 0x100);
+        assert_eq!(effective_so_mark_from_dae(0x4000_0000), 0x4000_0000);
     }
 }
 

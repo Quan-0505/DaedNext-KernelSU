@@ -36,4 +36,28 @@ mod tests {
         let after = BTreeSet::from([49, 50]);
         assert_eq!(new_netns_id_after_auto(&before, &after), Some(50));
     }
+
+    #[test]
+    fn explicit_netns_id_skips_namespaces_retained_by_previous_generation() {
+        let before = parse_used_netns_ids("nsid 49\nnsid 50\n");
+        let allocated = unused_explicit_netns_id(&before, 49).unwrap();
+        assert_eq!(allocated, 51);
+        let mut after = before.clone();
+        after.insert(allocated);
+        assert_eq!(new_netns_id_after_auto(&before, &after), Some(51));
+        let steps = vec![json!({
+            "name": "assign-production-netns-id-summary",
+            "status": "pass",
+            "effective_dae_netns_id": allocated,
+        })];
+        assert_eq!(effective_dae_netns_id(&steps, 49), allocated);
+    }
+
+    #[test]
+    fn explicit_netns_id_keeps_free_preference_and_respects_kernel_range() {
+        assert_eq!(unused_explicit_netns_id(&BTreeSet::from([12]), 49), Some(49));
+        assert_eq!(unused_explicit_netns_id(&BTreeSet::from([i32::MAX as u32]), i32::MAX as u32), Some(1));
+        assert_eq!(unused_explicit_netns_id(&BTreeSet::new(), 0), None);
+        assert_eq!(unused_explicit_netns_id(&BTreeSet::new(), u32::MAX), None);
+    }
 }

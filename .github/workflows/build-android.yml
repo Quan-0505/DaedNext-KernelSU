@@ -1,0 +1,67 @@
+name: Build Android module
+on:
+  workflow_dispatch:
+    inputs:
+      rebuild_panel:
+        description: Rebuild the locked upstream panel instead of reusing baseline panel assets
+        type: boolean
+        required: false
+        default: false
+permissions:
+  contents: read
+env:
+  RUSTUP_TOOLCHAIN: '1.98.0'
+  DAE_RUST_NATIVE_BPF_TOOLCHAIN: nightly-2026-09-01
+  CARGO_BUILD_JOBS: '2'
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install host and Rust toolchains
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang llvm cmake perl pkg-config libssl-dev
+          rustup toolchain install 1.98.0 --profile minimal
+          rustup target add aarch64-linux-android --toolchain 1.98.0
+          rustup toolchain install nightly-2026-09-01 --profile minimal --component rust-src
+          cargo install bpf-linker --version 0.10.3 --locked
+      - name: Install Android NDK r27c
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'ndk;27.2.12479018'
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+      - uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: android-r27c-rust198-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs', 'android/upstream.lock.json') }}
+          restore-keys: android-r27c-rust198-${{ runner.os }}-
+      - name: Restore verified runtime inputs
+        run: python3 android/tools/fetch-runtime.py
+      - name: Build Android core from this checkout
+        run: bash android/tools/build-android.sh
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: inputs.rebuild_panel
+        with:
+          node-version: '22'
+      - name: Build locked panel
+        if: inputs.rebuild_panel
+        run: |
+          corepack enable
+          corepack prepare pnpm@10.24.0 --activate
+          bash android/tools/build-panel.sh
+      - name: Create data-free module ZIP
+        run: |
+          python3 android/tools/seed-defaults.py
+          python3 android/tools/package.py
+          python3 android/tools/audit-public.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: DaeNext-KernelSU-${{ github.sha }}
+          path: android/dist/*
+          if-no-files-found: error

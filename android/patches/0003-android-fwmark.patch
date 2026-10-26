@@ -1,0 +1,85 @@
+diff --git a/crates/dae-build-support/src/lib.rs b/crates/dae-build-support/src/lib.rs
+index c30990a..e41721d 100644
+--- a/crates/dae-build-support/src/lib.rs
++++ b/crates/dae-build-support/src/lib.rs
+@@ -133,6 +133,10 @@ pub mod native_ebpf_build {
+             .arg("--target")
+             .arg("bpfel-unknown-none")
+             .arg("--release");
++        let mut features = features.to_vec();
++        if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("android") {
++            features.push("android-fwmark");
++        }
+         if !features.is_empty() {
+             command.arg("--features").arg(features.join(","));
+         }
+diff --git a/crates/dae-ebpf-program/Cargo.toml b/crates/dae-ebpf-program/Cargo.toml
+index f785608..daa1810 100644
+--- a/crates/dae-ebpf-program/Cargo.toml
++++ b/crates/dae-ebpf-program/Cargo.toml
+@@ -13,6 +13,7 @@ default = ["tproxy-program"]
+ tproxy-program = []
+ pname-core = []
+ trace-program = []
++android-fwmark = []
+ 
+ [dependencies]
+ aya-ebpf.workspace = true
+diff --git a/crates/dae-ebpf-program/src/routing.rs b/crates/dae-ebpf-program/src/routing.rs
+index 6dac30a..6847d2f 100644
+--- a/crates/dae-ebpf-program/src/routing.rs
++++ b/crates/dae-ebpf-program/src/routing.rs
+@@ -14,7 +14,12 @@ use crate::packet::{self, IPPROTO_TCP, ParsedPacket};
+ use crate::{helpers, maps};
+ 
+ const BPF_ANY: u64 = 0;
++#[cfg(not(feature = "android-fwmark"))]
+ const CONTROL_PLANE_SO_MARK: u32 = 0x100;
++// Android stores the network ID in the low 16 bits. Network IDs >= 256
++// overlap the Linux default mark and must not bypass transparent routing.
++#[cfg(feature = "android-fwmark")]
++const CONTROL_PLANE_SO_MARK: u32 = 0x4000_0000;
+ const LATENCY_PROBE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-latency\0\0\0\0";
+ const GEODATA_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-geodata\0\0\0\0";
+ const SUBSCRIPTION_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-subscript\0\0";
+@@ -577,6 +582,18 @@ mod tests {
+ 
+     const HELPER_PARENT_ARGV0_BASENAME: &[u8] = b"daed";
+ 
++    #[cfg(feature = "android-fwmark")]
++    #[test]
++    fn android_network_id_is_not_control_plane_traffic() {
++        let mut skb: __sk_buff = unsafe { core::mem::zeroed() };
++        for mark in [0x100, 0xc0103, 0xcffff] {
++            skb.mark = mark;
++            assert!(!pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
++        }
++        skb.mark = CONTROL_PLANE_SO_MARK | 0xc0103;
++        assert!(pid_is_control_plane(ptr::addr_of_mut!(skb), ptr::null_mut()));
++    }
++
+     fn process_name(bytes: &[u8]) -> [i8; TASK_COMM_LEN] {
+         let mut out = [0; TASK_COMM_LEN];
+         for (dst, src) in out.iter_mut().zip(bytes.iter().copied()) {
+diff --git a/crates/dae-resident-model/src/model.rs b/crates/dae-resident-model/src/model.rs
+index 9a19152..eaebe34 100644
+--- a/crates/dae-resident-model/src/model.rs
++++ b/crates/dae-resident-model/src/model.rs
+@@ -31,9 +31,17 @@ pub use xhttp::{
+     ResidentXhttpPaddingMethod, ResidentXhttpPaddingPlacement, ResidentXhttpSettingsPlan,
+     ResidentXhttpUplinkDataPlacement, ResidentXhttpXmuxPlan,
+ };
++#[cfg(not(target_os = "android"))]
+ pub const RESIDENT_CONTROL_PLANE_SO_MARK: u32 = 0x100;
++#[cfg(target_os = "android")]
++pub const RESIDENT_CONTROL_PLANE_SO_MARK: u32 = 0x4000_0000;
+ 
+ pub fn effective_so_mark_from_dae(configured: u32) -> u32 {
++    // Migrate the old Linux default when importing Android test configurations.
++    #[cfg(target_os = "android")]
++    if configured == 0x100 {
++        return RESIDENT_CONTROL_PLANE_SO_MARK;
++    }
+     if configured == 0 {
+         RESIDENT_CONTROL_PLANE_SO_MARK
+     } else {

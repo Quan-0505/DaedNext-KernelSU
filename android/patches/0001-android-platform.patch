@@ -1,0 +1,311 @@
+diff --git a/crates/dae-daemon/src/production_runtime_owner/command.rs b/crates/dae-daemon/src/production_runtime_owner/command.rs
+index 7d69ed0..4e3c7d5 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/command.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/command.rs
+@@ -94,7 +94,7 @@ pub(super) fn iface_exists(iface: &str) -> bool {
+ }
+ 
+ pub(super) fn netns_exists(name: &str) -> bool {
+-    ["/var/run/netns", "/run/netns"]
++    ["/var/run/netns", "/run/netns", "/mnt/run/netns", "/mnt/run"]
+         .into_iter()
+         .any(|parent| PathBuf::from(parent).join(name).exists())
+ }
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
+index a9e3018..8845837 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
+@@ -6,6 +6,11 @@ use std::path::Path;
+ 
+ use super::{DefaultRouteFingerprint, InterfaceAddressFingerprint, NetworkFamily};
+ 
++// Route flags are missing from bionic's libc crate; values are ABI-stable
++// (linux/rtnetlink.h).
++const RTF_UP_LOCAL: u32 = 0x0001;
++const RTF_REJECT_LOCAL: u32 = 0x0200;
++
+ const IPV6_ADDRESS_UNSTABLE_FLAGS: u32 =
+     libc::IFA_F_TEMPORARY | libc::IFA_F_DADFAILED | libc::IFA_F_DEPRECATED | libc::IFA_F_TENTATIVE;
+ 
+@@ -130,7 +135,7 @@ pub(super) fn parse_ipv6_interface_addresses(
+ }
+ 
+ fn route_is_usable(flags: u32) -> bool {
+-    flags & libc::RTF_UP as u32 != 0 && flags & libc::RTF_REJECT as u32 == 0
++    flags & RTF_UP_LOCAL as u32 != 0 && flags & RTF_REJECT_LOCAL as u32 == 0
+ }
+ 
+ fn ipv4_from_proc_hex(raw: &str) -> Result<Ipv4Addr, String> {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
+index 0350e46..11f3d3f 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
+@@ -115,18 +115,25 @@ pub(super) fn resident_runtime_options(
+     })
+ }
+ 
++/// Root for resident runtime artifacts. Android has no writable /run, so the
++/// module entrypoints point this at a directory under /data/adb instead.
++fn runtime_dir_root() -> PathBuf {
++    match std::env::var_os("DAE_RUNTIME_DIR") {
++        Some(value) if !value.is_empty() => PathBuf::from(value),
++        _ => PathBuf::from("/run/daed"),
++    }
++}
++
+ pub(super) fn resident_runtime_artifact_dir(pid: u32) -> PathBuf {
+-    PathBuf::from("/run/daed/runtime").join(pid.to_string())
++    runtime_dir_root().join("runtime").join(pid.to_string())
+ }
+ 
+ fn cleanup_stale_resident_runtime_artifacts(current_artifact_dir: &Path) {
+-    let _ = fs::create_dir_all("/run/daed/runtime");
+-    cleanup_runtime_artifact_root(Path::new("/run/daed"), "resident-runtime-", None);
+-    cleanup_runtime_artifact_root(
+-        Path::new("/run/daed/runtime"),
+-        "",
+-        Some(current_artifact_dir),
+-    );
++    let root = runtime_dir_root();
++    let runtime_dir = root.join("runtime");
++    let _ = fs::create_dir_all(&runtime_dir);
++    cleanup_runtime_artifact_root(&root, "resident-runtime-", None);
++    cleanup_runtime_artifact_root(&runtime_dir, "", Some(current_artifact_dir));
+ }
+ 
+ fn cleanup_runtime_artifact_root(root: &Path, prefix: &str, current_artifact_dir: Option<&Path>) {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
+index 5467a8c..8a1e963 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
+@@ -44,7 +44,12 @@ pub(crate) fn resident_interface_validation_checks(
+     wan_ifaces: &[String],
+ ) -> Vec<Value> {
+     let mut checks = Vec::new();
+-    let lan_present = !lan_ifaces.iter().all(|iface| iface.trim().is_empty());
++    // Phones have no LAN side to proxy; allow running without one when the
++    // caller opts in explicitly.
++    let lan_optional = std::env::var_os("DAE_ALLOW_EMPTY_LAN")
++        .map(|value| !value.is_empty())
++        .unwrap_or(false);
++    let lan_present = lan_optional || !lan_ifaces.iter().all(|iface| iface.trim().is_empty());
+     push_check(
+         &mut checks,
+         "resident-lan-interface-configured",
+@@ -431,21 +436,41 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
+         .args([family, "-o", "route", "show", "default"])
+         .output()
+         .map_err(|err| format!("failed to run ip {family} route show default: {err}"))?;
+-    if !output.status.success() {
+-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+-        return Err(format!(
+-            "ip {family} route show default exited with status {}{}",
+-            output.status,
+-            if stderr.is_empty() {
+-                String::new()
+-            } else {
+-                format!(": {stderr}")
++    if output.status.success() {
++        let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&output.stdout));
++        if !ifaces.is_empty() {
++            return Ok(ifaces);
++        }
++    }
++    // Android keeps the default route in per-interface tables, so
++    // `route show default` on the main table is empty. Probe the route that a
++    // real destination would take instead: it resolves to the active WAN
++    // interface for both Wi-Fi (wlan0) and cellular (rmnet_dataN).
++    let probe = if family == "-6" {
++        "2606:4700:4700::1111"
++    } else {
++        "1.1.1.1"
++    };
++    if let Ok(probe_output) = Command::new("ip")
++        .args([family, "-o", "route", "get", probe])
++        .output()
++    {
++        if probe_output.status.success() {
++            let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&probe_output.stdout));
++            if !ifaces.is_empty() {
++                return Ok(ifaces);
+             }
+-        ));
++        }
+     }
+-    Ok(parse_default_route_ifaces(&String::from_utf8_lossy(
+-        &output.stdout,
+-    )))
++    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
++    Err(format!(
++        "ip {family} route show default returned no default route{}",
++        if stderr.is_empty() {
++            String::new()
++        } else {
++            format!(": {stderr}")
++        }
++    ))
+ }
+ 
+ fn parse_default_route_ifaces(output: &str) -> Vec<String> {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs b/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
+index 9530970..a72f0e9 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
+@@ -117,11 +117,21 @@ pub(crate) fn assign_production_netns_id(
+         CommandSpec::new("ip", ["netns", "list-id"]),
+     );
+     let before = parse_used_netns_ids(before_step["stdout"].as_str().unwrap_or_default());
+-    let assign_step = run_observation_step(
++    let mut assign_step = run_observation_step(
+         steps,
+         "assign-production-netns-id-auto",
+         CommandSpec::new("ip", ["netns", "set", PRODUCTION_NETNS, "auto"]),
+     );
++    // Android ships toybox ip, which rejects the "auto" netnsid keyword but
++    // accepts an explicit numeric id. Fall back to the configured value.
++    if assign_step["status"].as_str() != Some("pass") && configured_dae_netns_id > 0 {
++        let explicit = configured_dae_netns_id.to_string();
++        assign_step = run_observation_step(
++            steps,
++            "assign-production-netns-id-explicit",
++            CommandSpec::new("ip", ["netns", "set", PRODUCTION_NETNS, explicit.as_str()]),
++        );
++    }
+     if assign_step["status"].as_str() != Some("pass") {
+         steps.push(json!({
+             "name": "assign-production-netns-id-summary",
+diff --git a/crates/dae-ebpf-support/src/aya_loader/netns.rs b/crates/dae-ebpf-support/src/aya_loader/netns.rs
+index 174d2a6..9704c63 100644
+--- a/crates/dae-ebpf-support/src/aya_loader/netns.rs
++++ b/crates/dae-ebpf-support/src/aya_loader/netns.rs
+@@ -56,13 +56,36 @@ impl Drop for NetnsGuard {
+     }
+ }
+ 
++/// Candidate directories holding named network namespaces. Android's toybox
++/// `ip` keeps them under /mnt/run/netns, classic iproute2 uses /var/run/netns.
++fn netns_dirs() -> Vec<PathBuf> {
++    if let Some(dir) = std::env::var_os("DAE_NETNS_DIR") {
++        if !dir.is_empty() {
++            return vec![PathBuf::from(dir)];
++        }
++    }
++    ["/var/run/netns", "/run/netns", "/mnt/run/netns", "/mnt/run"]
++        .into_iter()
++        .map(PathBuf::from)
++        .collect()
++}
++
+ pub(super) fn netns_path(netns: &str) -> PathBuf {
+     let path = Path::new(netns);
+     if path.is_absolute() {
+-        path.to_owned()
+-    } else {
+-        Path::new("/var/run/netns").join(netns)
++        return path.to_owned();
++    }
++    let dirs = netns_dirs();
++    for dir in &dirs {
++        let candidate = dir.join(netns);
++        if candidate.exists() {
++            return candidate;
++        }
+     }
++    dirs.into_iter()
++        .next()
++        .unwrap_or_else(|| PathBuf::from("/var/run/netns"))
++        .join(netns)
+ }
+ 
+ pub(super) fn setns(fd: i32) -> io::Result<()> {
+diff --git a/crates/dae-ebpf-support/src/cgroup.rs b/crates/dae-ebpf-support/src/cgroup.rs
+index f026125..e3b396f 100644
+--- a/crates/dae-ebpf-support/src/cgroup.rs
++++ b/crates/dae-ebpf-support/src/cgroup.rs
+@@ -130,6 +130,23 @@ pub fn dae_cgroup_attach_matrix() -> Vec<DaeCgroupAttachLine> {
+ }
+ 
+ pub fn detect_cgroup2_mount() -> io::Result<PathBuf> {
++    // Android: the vendor network stack already owns the shared cgroup/skb
++    // attach types on the cgroup2 root, so a dae attach there is rejected.
++    // Operators can point the runtime at a subtree that has no conflicting
++    // non-multi attachment (for example /sys/fs/cgroup/apps).
++    if let Some(root) = std::env::var_os("DAE_CGROUP2_ROOT") {
++        let path = PathBuf::from(root);
++        if path.is_dir() {
++            return Ok(path);
++        }
++        return Err(io::Error::new(
++            io::ErrorKind::NotFound,
++            format!(
++                "DAE_CGROUP2_ROOT is not an existing directory: {}",
++                path.display()
++            ),
++        ));
++    }
+     let mounts = fs::read_to_string("/proc/mounts")?;
+     detect_cgroup2_mount_from_proc_mounts(&mounts)
+         .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cgroup2 not mounted"))
+diff --git a/crates/dae-ebpf-support/src/temporary_program.rs b/crates/dae-ebpf-support/src/temporary_program.rs
+index 05fa84a..eef7105 100644
+--- a/crates/dae-ebpf-support/src/temporary_program.rs
++++ b/crates/dae-ebpf-support/src/temporary_program.rs
+@@ -11,6 +11,10 @@ const BPF_MOV: u8 = 0xb0;
+ const BPF_K: u8 = 0x00;
+ const BPF_JMP: u8 = 0x05;
+ const BPF_EXIT: u8 = 0x90;
++// bionic's libc crate does not export these socket option constants, but the
++// kernel numbers are stable (asm-generic/socket.h).
++const SO_ATTACH_BPF_LOCAL: libc::c_int = 50;
++const SO_DETACH_BPF_LOCAL: libc::c_int = 27;
+ 
+ #[derive(Clone, Debug, Eq, PartialEq)]
+ pub struct TemporaryBpfProgramAttachSmoke {
+@@ -105,7 +109,7 @@ fn attach_socket_filter(socket_fd: i32, program_fd: i32) -> io::Result<()> {
+         libc::setsockopt(
+             socket_fd,
+             libc::SOL_SOCKET,
+-            libc::SO_ATTACH_BPF,
++            SO_ATTACH_BPF_LOCAL,
+             (&fd as *const libc::c_int).cast::<libc::c_void>(),
+             size_of::<libc::c_int>() as libc::socklen_t,
+         )
+@@ -122,7 +126,7 @@ fn detach_socket_filter(socket_fd: i32) -> io::Result<()> {
+         libc::setsockopt(
+             socket_fd,
+             libc::SOL_SOCKET,
+-            libc::SO_DETACH_BPF,
++            SO_DETACH_BPF_LOCAL,
+             (&value as *const libc::c_int).cast::<libc::c_void>(),
+             size_of::<libc::c_int>() as libc::socklen_t,
+         )
+diff --git a/crates/dae-ebpf-support/src/tproxy_listener.rs b/crates/dae-ebpf-support/src/tproxy_listener.rs
+index d991047..544db1f 100644
+--- a/crates/dae-ebpf-support/src/tproxy_listener.rs
++++ b/crates/dae-ebpf-support/src/tproxy_listener.rs
+@@ -96,7 +96,7 @@ pub fn open_transparent_udp_socket_bound(addr: SocketAddr) -> io::Result<UdpSock
+ 
+ fn open_named_netns(name: &str) -> io::Result<File> {
+     let mut last_err = None;
+-    for parent in ["/run/netns", "/var/run/netns"] {
++    for parent in ["/run/netns", "/var/run/netns", "/mnt/run/netns", "/mnt/run"] {
+         match File::open(PathBuf::from(parent).join(name)) {
+             Ok(file) => return Ok(file),
+             Err(err) => last_err = Some(err),
+diff --git a/crates/dae-product-persistence/src/state/schema.rs b/crates/dae-product-persistence/src/state/schema.rs
+index 7f8f565..6b76e94 100644
+--- a/crates/dae-product-persistence/src/state/schema.rs
++++ b/crates/dae-product-persistence/src/state/schema.rs
+@@ -158,6 +158,12 @@ pub fn apply_state_schema(conn: &Connection) -> io::Result<()> {
+         "use_proxy",
+         "INTEGER NOT NULL DEFAULT 0",
+     )?;
++    ensure_table_column(
++        conn,
++        "group_subscriptions",
++        "name_filter_regex",
++        "TEXT NULL",
++    )?;
+     ensure_table_column(
+         conn,
+         "systems",

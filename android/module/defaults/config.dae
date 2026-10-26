@@ -1,0 +1,25 @@
+global {
+ tproxy_port: 12345
+ wan_interface: auto
+ log_level: info
+ so_mark_from_dae: 16777216
+ tproxy_port_protect: true
+ dial_mode: "domain+"
+ tcp_check_url: "http://cp.cloudflare.com,1.1.1.1"
+ udp_check_dns: "223.5.5.5:53"
+ check_interval: "5m0s"
+}
+
+dns {
+ upstream {
+  alidns: "udp://223.5.5.5:53"
+ }
+ routing {
+  request { fallback: alidns }
+ }
+}
+
+routing {
+ dip(geoip:private) -> direct
+ fallback: direct
+}

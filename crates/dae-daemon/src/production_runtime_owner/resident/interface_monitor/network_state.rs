@@ -243,6 +243,14 @@ fn observe_wan_network_state_from_paths(
         &mut routes,
         &mut errors,
     );
+    // Android's default routes live in per-network tables. /proc/net/route
+    // exposes only main, while the IPv6 proc table also includes inactive
+    // cellular defaults and dummy0. Match the same policy route used by WAN
+    // auto resolution rather than treating every IPv6 default as active.
+    #[cfg(target_os = "android")]
+    if policy.auto_enabled {
+        routes = android_policy_default_routes();
+    }
     routes.retain(|route| route.interface != "lo" && policy.route_is_relevant(route));
     routes.sort();
     routes.dedup();
@@ -302,6 +310,47 @@ fn read_routes(
         },
         Err(err) => errors.push(format!("read {}: {err}", path.display())),
     }
+}
+
+#[cfg(target_os = "android")]
+fn android_policy_default_routes() -> Vec<DefaultRouteFingerprint> {
+    use std::process::Command;
+    for (flag, destination, family) in [
+        ("-4", "1.1.1.1", NetworkFamily::Ipv4),
+        ("-6", "2606:4700:4700::1111", NetworkFamily::Ipv6),
+    ] {
+        let Ok(output) = Command::new("/system/bin/ip")
+            .args([flag, "route", "get", destination])
+            .output()
+        else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let text = String::from_utf8_lossy(&output.stdout);
+        let fields = text.split_whitespace().collect::<Vec<_>>();
+        let Some(interface) = fields.windows(2).find(|pair| pair[0] == "dev").map(|pair| pair[1]) else {
+            continue;
+        };
+        if interface == "lo" || interface == "dummy0" {
+            continue;
+        }
+        let gateway = fields.windows(2)
+            .find(|pair| pair[0] == "via")
+            .and_then(|pair| pair[1].parse::<IpAddr>().ok())
+            .unwrap_or_else(|| match family {
+                NetworkFamily::Ipv4 => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+                NetworkFamily::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+            });
+        return vec![DefaultRouteFingerprint {
+            family,
+            interface: interface.to_owned(),
+            gateway,
+            metric: 0,
+        }];
+    }
+    Vec::new()
 }
 
 fn merge_addresses(

@@ -1,0 +1,41 @@
+name: Android source checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Audit public integration source
+        run: python3 android/tools/audit-public.py
+      - name: Check Python, shell and WebUI syntax
+        run: |
+          python3 -m py_compile android/tools/*.py
+          find android -name '*.sh' -print0 | xargs -0 -n1 bash -n
+          bash -n android/module/bin/daenextctl
+          node --check android/module/webroot/app.js
+          git diff --check
+      - name: Verify empty generated defaults
+        run: |
+          python3 android/tools/seed-defaults.py
+          python3 - <<'PY'
+          import sqlite3
+          with sqlite3.connect('android/module/defaults/daed.db') as db:
+              assert db.execute('pragma quick_check').fetchone()[0] == 'ok'
+              for table in ('users', 'nodes', 'subscriptions'):
+                  assert db.execute('select count(*) from ' + table).fetchone()[0] == 0
+              assert db.execute('select running from systems').fetchone()[0] == 0
+          PY
+          git diff --exit-code -- android/module/defaults/config.dae
