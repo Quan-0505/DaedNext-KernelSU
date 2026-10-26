@@ -12,7 +12,7 @@ python android/tools/seed-defaults.py
 python android/tools/package.py
 ```
 
-安装包及 SHA256 输出到 `android/dist/`。离线已有 alpha4 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaeNext-KernelSU-v0.1.0-alpha4-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
+安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中，不生成单独校验附件。离线已有 alpha4 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaeNext-KernelSU-v0.1.0-alpha4-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
 
 发布新版本前修改 `android/module/module.prop` 的 version/versionCode，更新 WebUI 版本标识及 CHANGELOG。不要把用户数据库复制到 module/defaults；默认数据库由源码 schema 生成。
 
@@ -83,4 +83,4 @@ cargo test --locked -p dae-daemon --lib production_runtime_owner::topology::test
 - Android source checks：检查新增 Android 源码、Shell/Python/JavaScript 语法以及空白默认数据库，不声称覆盖 Android 数据面。
 - Build Android module：手动完整构建核心，复用锁定的面板/geodata 输入并上传 Artifact；选择 rebuild_panel 可重新编译锁定面板。工作流不自动创建 Release。
 
-不要把 SSH 密码、订阅或手机数据库放进 Actions 变量或构建产物。GitHub Release 应上传安装 ZIP 和对应 SHA256；新版本在实机通过验收后再发布。
+不要把 SSH 密码、订阅或手机数据库放进 Actions 变量或构建产物。GitHub Release 只上传安装 ZIP，不上传单独的 SHA256 文件；如需展示校验值，写在发布说明中。新版本在实机通过验收后再发布。

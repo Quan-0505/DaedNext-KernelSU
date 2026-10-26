@@ -43,5 +43,4 @@ with zipfile.ZipFile(dest,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) 
   info.compress_type=zipfile.ZIP_DEFLATED
   z.writestr(info,p.read_bytes())
 sha=hashlib.sha256(dest.read_bytes()).hexdigest()
-(out/(dest.name+'.sha256')).write_text(f'{sha}  {dest.name}\n',encoding='ascii')
 print(json.dumps({'zip':str(dest),'bytes':dest.stat().st_size,'sha256':sha,'files':len(manifest)},ensure_ascii=False))
