@@ -1,4 +1,4 @@
-# DaeNext for KernelSU
+# DaedNext-KernelSU
 
 ARM64 Android 上的 DaeNext 原生透明代理模块，提供 KernelSU WebUI、完整 DaedNext 管理面板、开机服务、持久化配置和启停/备份命令。
 
@@ -6,7 +6,7 @@ ARM64 Android 上的 DaeNext 原生透明代理模块，提供 KernelSU WebUI、
 
 ## 安装与使用
 
-1. 在 KernelSU 管理器中安装 `DaeNext-KernelSU-v0.1.0-alpha4-arm64.zip`。
+1. 在 KernelSU 管理器中安装 `DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip`。
 2. 打开模块 WebUI，点击「启动服务」。不支持热安装的 KernelSU 版本需要先重启。
 3. 进入管理面板 `http://127.0.0.1:2023/`，创建自己的管理账户，再添加节点、订阅和分流规则。
 4. 在面板中启动内核。初始配置使用 `wan_interface: auto`、不配置 LAN，默认直连。

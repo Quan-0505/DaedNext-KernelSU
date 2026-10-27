@@ -10,9 +10,9 @@
   },
   "daemonVersion": "3.1.0-android-ksu.3",
   "runtimeSeed": {
-    "repository": "Quan-0505/DaeNext-KernelSU",
+    "repository": "Quan-0505/DaedNext-KernelSU",
     "tag": "v0.1.0-alpha4",
-    "asset": "DaeNext-KernelSU-v0.1.0-alpha4-arm64.zip",
+    "asset": "DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip",
     "sha256": "4101fa277c5da756d8f91806a4646084e8629b180785def4a983514596c71432"
   }
 }

@@ -1,8 +1,8 @@
-# DaeNext for KernelSU
+# DaedNext-KernelSU
 
 一加 13 上验证的 ARM64 Android / KernelSU 原生透明代理模块，基于 [ksong008/DaeNext](https://github.com/ksong008/DaeNext) 和 [DaedNext](https://github.com/ksong008/DaedNext)。当前版本 **v0.1.0-alpha4**，属于设备实测的早期版本。
 
-[下载安装包](https://github.com/Quan-0505/DaeNext-KernelSU/releases) · [构建与升级](android/docs/BUILD.md) · [实测范围](android/docs/VALIDATION.md) · [变更记录](android/CHANGELOG.md)
+[下载安装包](https://github.com/Quan-0505/DaedNext-KernelSU/releases) · [构建与升级](android/docs/BUILD.md) · [实测范围](android/docs/VALIDATION.md) · [变更记录](android/CHANGELOG.md)
 
 ## 安装
 

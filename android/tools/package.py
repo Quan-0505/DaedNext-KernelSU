@@ -31,7 +31,7 @@ manifest={str(p.relative_to(module)).replace('\\','/'):hashlib.sha256(p.read_byt
 properties=dict(line.split('=',1) for line in (module/'module.prop').read_text(encoding='utf8').splitlines() if '=' in line)
 version=properties['version']
 assert re.fullmatch(r'[A-Za-z0-9._-]+',version)
-dest=out/f'DaeNext-KernelSU-{version}-arm64.zip'
+dest=out/f'DaedNext-KernelSU-{version}-arm64.zip'
 with zipfile.ZipFile(dest,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) as z:
  for p in sorted(module.rglob('*')):
   if not p.is_file():continue

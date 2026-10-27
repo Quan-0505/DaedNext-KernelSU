@@ -10,6 +10,6 @@
 - `upstream.lock.json`：上游版本、面板版本、已验证运行时输入及 SHA256。
 - `docs/`：构建、维护及实测范围。
 
-安装包见仓库 [Releases](https://github.com/Quan-0505/DaeNext-KernelSU/releases)。默认不含账户、节点、订阅，初始规则直连。更新和卸载保留 `/data/adb/daenext`；使用前备份自己的配置。
+安装包见仓库 [Releases](https://github.com/Quan-0505/DaedNext-KernelSU/releases)。默认不含账户、节点、订阅，初始规则直连。更新和卸载保留 `/data/adb/daenext`；使用前备份自己的配置。
 
 公开仓库不接收设备数据库、备份、抓包、登录信息、订阅 URL、节点 URI 或个人截图。提交前运行 `python android/tools/audit-public.py`。
