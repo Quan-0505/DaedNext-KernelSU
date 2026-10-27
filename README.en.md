@@ -43,17 +43,9 @@ The integration focuses on Android deployment: service lifecycle, system trust s
 
 ### Component overview
 
-```mermaid
-flowchart LR
-    Apps["Android apps"] --> Network["Android network stack"]
-    Network <--> Engine["TCX / eBPF and native runtime"]
-    Engine --> Direct["Direct connection"]
-    Engine --> Proxy["Proxy nodes"]
-    KSU["KernelSU WebUI"] --> Control["Module service controller"]
-    Control --> Daemon["daed configuration and control"]
-    Panel["DaedNext dashboard"] --> Daemon
-    Daemon -.-> Engine
-```
+[![DaedNext-KernelSU components: traffic flow and configuration management](docs/images/components.en.png)](https://raw.githubusercontent.com/Quan-0505/DaedNext-KernelSU/main/docs/images/components.en.png)
+
+Tap the image to open the full-resolution version. Use pinch-to-zoom on mobile.
 
 ## Compatibility and validation
 

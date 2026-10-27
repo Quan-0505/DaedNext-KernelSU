@@ -43,17 +43,9 @@ DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust �
 
 ### 组件关系
 
-```mermaid
-flowchart LR
-    Apps["Android 应用"] --> Network["Android 网络栈"]
-    Network <--> Engine["TCX / eBPF 与原生运行时"]
-    Engine --> Direct["直连出口"]
-    Engine --> Proxy["代理节点"]
-    KSU["KernelSU WebUI"] --> Control["模块服务控制器"]
-    Control --> Daemon["daed 配置与控制"]
-    Panel["DaedNext 管理面板"] --> Daemon
-    Daemon -.-> Engine
-```
+[![DaedNext-KernelSU 组件关系：流量处理与配置管理](docs/images/components.zh-CN.png)](https://raw.githubusercontent.com/Quan-0505/DaedNext-KernelSU/main/docs/images/components.zh-CN.png)
+
+点击图片打开高清原图，手机可双指缩放查看。
 
 ## 兼容性与实测状态
 
