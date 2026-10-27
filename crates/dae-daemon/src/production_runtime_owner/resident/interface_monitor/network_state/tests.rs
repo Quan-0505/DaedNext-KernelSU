@@ -131,3 +131,40 @@ fn configuration_without_wan_interfaces_skips_wan_observation_work() {
         WanNetworkState::empty_verified()
     );
 }
+
+#[test]
+fn android_handover_observes_both_policy_route_families() {
+    let routes = android_policy_routes_from_outputs([
+        (
+            NetworkFamily::Ipv4,
+            "1.1.1.1 via 192.0.2.1 dev wlan0 table wlan0 src 192.0.2.2".into(),
+        ),
+        (
+            NetworkFamily::Ipv6,
+            "2606:4700:4700::1111 via fe80::1 dev rmnet_data4 table rmnet_data4 metric 1024".into(),
+        ),
+    ]);
+    assert_eq!(routes.len(), 2);
+    assert_eq!(routes[0].interface, "wlan0");
+    assert_eq!(routes[1].interface, "rmnet_data4");
+    assert_eq!(routes[1].family, NetworkFamily::Ipv6);
+}
+
+#[test]
+fn android_policy_routes_exclude_placeholder_and_missing_routes() {
+    let routes = android_policy_routes_from_outputs([
+        (
+            NetworkFamily::Ipv4,
+            "RTNETLINK answers: Network is unreachable".into(),
+        ),
+        (NetworkFamily::Ipv6, "default dev dummy0".into()),
+        (NetworkFamily::Ipv4, "local 1.1.1.1 dev lo".into()),
+        (
+            NetworkFamily::Ipv6,
+            "2606:4700:4700::1111 dev rmnet_data4 table rmnet_data4".into(),
+        ),
+    ]);
+    assert_eq!(routes.len(), 1);
+    assert_eq!(routes[0].interface, "rmnet_data4");
+    assert!(routes[0].gateway.is_unspecified());
+}

@@ -33,7 +33,8 @@ DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust �
 | 原生流量处理 | 使用 Rust 核心及 TCX/eBPF 数据面接管流量，结合配置完成直连或代理转发。 |
 | 双层管理界面 | KernelSU WebUI 管理服务与兼容选项；DaedNext 面板配置节点、订阅、策略组、DNS、路由与日志。 |
 | 服务生命周期 | 提供启动、停止、重启、重载、开机恢复、状态检查与一致性备份。 |
-| Android 网络适配 | 自动选择 WAN，适配手机无 LAN、Android 策略路由及 Wi-Fi/蜂窝切换。 |
+| Android 网络适配 | 自动选择 WAN，使用 Android 策略路由同时监测 IPv4／IPv6，支持 Wi-Fi／蜂窝切换后的数据面恢复。 |
+| 节点健康检查 | 新安装默认每 50 秒检查；切网恢复立即重新探测。升级保留已有用户的间隔设置。 |
 | 蜂窝网络修复 | 处理 QoS 改写数据包标记造成的自身流量回环，以及命名空间重建时的编号冲突。 |
 | 系统信任库 | 从 Android 系统证书目录生成 CA bundle，默认保留节点 TLS 证书校验。 |
 | 持久化数据 | 账户、配置、节点和订阅保存在独立数据目录；更新与卸载保留数据。 |
@@ -62,9 +63,9 @@ flowchart LR
 | 内核能力 | 需具备兼容的 eBPF/TC、BTF、veth 与网络命名空间支持；厂商限制会影响实际可用性。 |
 | 已验证设备 | 一加 13 / PJZ110，Android 17 / SDK 37。 |
 | 已验证内核 | `6.6.118-android15` AGKI，SELinux Enforcing。 |
-| 当前实测版本 | 模块 `v0.1.0-alpha4`，核心 `3.1.0-android-ksu.3`。 |
+| 当前实测版本 | 模块 `v0.1.0-alpha5`，核心 `3.1.0-android-ksu.4`。 |
 
-alpha4 已完成标准 KernelSU 安装、冷启动、Wi-Fi → 5G 切换、实际应用联网及 Google 策略还原验证。5G 下 Google、YouTube、Telegram 和国内直连检查通过，用户确认重启后的 Play 商店首页正常。
+alpha5 修复切网时配置不变导致恢复无效的问题，并减少重复重建；验证覆盖重复 Wi-Fi／5G 切换、同配置接口变化及严格 TLS 连接。本轮 Wi-Fi 上游有代理，无上游代理 Wi-Fi 待补测。标准冷启动及用户确认的 Play 商店首页记录来自 alpha4；alpha5 的具体测试结果与限制见下方实测记录。
 
 当前设备的 cgroup attach 受到厂商内核限制，配置应避免 `pname()` 进程名路由。全部 UDP/QUIC、IPv6 场景、其他机型、Play 应用安装与付费购买不在本轮验收结论内。具体条件和证据摘要见 [实测记录](android/docs/VALIDATION.md)。
 
@@ -74,7 +75,7 @@ alpha4 已完成标准 KernelSU 安装、冷启动、Wi-Fi → 5G 切换、实�
 
 从 [Latest Release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest) 下载 ARM64 ZIP，在 KernelSU 管理器中选择本地安装，完成后重启。
 
-当前实测安装包：[`DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha4/DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip)。Release 只提供安装 ZIP。
+当前实测安装包：[`DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha5/DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip)。Release 只提供安装 ZIP。
 
 安装前停止其他透明代理核心或 VPN，避免重复接管流量。模块包含冲突检测，但不能代替对其他代理状态的检查。
 

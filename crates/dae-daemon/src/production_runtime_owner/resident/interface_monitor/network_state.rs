@@ -315,42 +315,67 @@ fn read_routes(
 #[cfg(target_os = "android")]
 fn android_policy_default_routes() -> Vec<DefaultRouteFingerprint> {
     use std::process::Command;
-    for (flag, destination, family) in [
-        ("-4", "1.1.1.1", NetworkFamily::Ipv4),
-        ("-6", "2606:4700:4700::1111", NetworkFamily::Ipv6),
-    ] {
-        let Ok(output) = Command::new("/system/bin/ip")
-            .args([flag, "route", "get", destination])
-            .output()
-        else {
-            continue;
-        };
-        if !output.status.success() {
-            continue;
-        }
-        let text = String::from_utf8_lossy(&output.stdout);
-        let fields = text.split_whitespace().collect::<Vec<_>>();
-        let Some(interface) = fields.windows(2).find(|pair| pair[0] == "dev").map(|pair| pair[1]) else {
-            continue;
-        };
-        if interface == "lo" || interface == "dummy0" {
-            continue;
-        }
-        let gateway = fields.windows(2)
-            .find(|pair| pair[0] == "via")
-            .and_then(|pair| pair[1].parse::<IpAddr>().ok())
-            .unwrap_or_else(|| match family {
-                NetworkFamily::Ipv4 => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-                NetworkFamily::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-            });
-        return vec![DefaultRouteFingerprint {
-            family,
-            interface: interface.to_owned(),
-            gateway,
-            metric: 0,
-        }];
+    android_policy_routes_from_outputs(
+        [
+            ("-4", "1.1.1.1", NetworkFamily::Ipv4),
+            ("-6", "2606:4700:4700::1111", NetworkFamily::Ipv6),
+        ]
+        .into_iter()
+        .filter_map(|(flag, destination, family)| {
+            let output = Command::new("/system/bin/ip")
+                .args([flag, "route", "get", destination])
+                .output()
+                .ok()?;
+            output
+                .status
+                .success()
+                .then(|| (family, String::from_utf8_lossy(&output.stdout).into_owned()))
+        }),
+    )
+}
+
+#[cfg(any(target_os = "android", test))]
+fn android_policy_routes_from_outputs(
+    outputs: impl IntoIterator<Item = (NetworkFamily, String)>,
+) -> Vec<DefaultRouteFingerprint> {
+    // Both families matter: during handover IPv4 may already use Wi-Fi while
+    // IPv6 still uses cellular. Match the startup resolver's complete WAN set.
+    outputs
+        .into_iter()
+        .filter_map(|(family, text)| android_policy_route_from_output(family, &text))
+        .collect()
+}
+
+#[cfg(any(target_os = "android", test))]
+fn android_policy_route_from_output(
+    family: NetworkFamily,
+    text: &str,
+) -> Option<DefaultRouteFingerprint> {
+    let fields = text.split_whitespace().collect::<Vec<_>>();
+    let Some(interface) = fields
+        .windows(2)
+        .find(|pair| pair[0] == "dev")
+        .map(|pair| pair[1])
+    else {
+        return None;
+    };
+    if interface == "lo" || interface == "dummy0" {
+        return None;
     }
-    Vec::new()
+    let gateway = fields
+        .windows(2)
+        .find(|pair| pair[0] == "via")
+        .and_then(|pair| pair[1].parse::<IpAddr>().ok())
+        .unwrap_or_else(|| match family {
+            NetworkFamily::Ipv4 => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
+            NetworkFamily::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
+        });
+    Some(DefaultRouteFingerprint {
+        family,
+        interface: interface.to_owned(),
+        gateway,
+        metric: 0,
+    })
 }
 
 fn merge_addresses(

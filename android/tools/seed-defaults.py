@@ -24,7 +24,7 @@ global_conf='''global {
  dial_mode: "domain+"
  tcp_check_url: "http://cp.cloudflare.com,1.1.1.1"
  udp_check_dns: "223.5.5.5:53"
- check_interval: "5m0s"
+ check_interval: "50s"
 }
 '''
 dns='''dns {

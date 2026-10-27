@@ -437,6 +437,7 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
         .args([family, "-o", "route", "show", "default"])
         .output()
         .map_err(|err| format!("failed to run ip {family} route show default: {err}"))?;
+    #[cfg(not(target_os = "android"))]
     if output.status.success() {
         let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&output.stdout));
         if !ifaces.is_empty() {
@@ -458,6 +459,11 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
     {
         if probe_output.status.success() {
             let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&probe_output.stdout));
+            #[cfg(target_os = "android")]
+            let ifaces = ifaces
+                .into_iter()
+                .filter(|iface| iface != "lo" && iface != "dummy0")
+                .collect::<Vec<_>>();
             if !ifaces.is_empty() {
                 return Ok(ifaces);
             }

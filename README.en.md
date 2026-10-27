@@ -33,7 +33,8 @@ The integration focuses on Android deployment: service lifecycle, system trust s
 | Native traffic processing | Rust core with a TCX/eBPF data plane and configurable direct or proxy forwarding. |
 | Two management interfaces | KernelSU WebUI for service controls and compatibility options; DaedNext for nodes, subscriptions, groups, DNS, routing and logs. |
 | Service lifecycle | Start, stop, restart, reload, boot recovery, readiness checks and consistent backups. |
-| Android networking | Automatic WAN selection, phone configurations without LAN interfaces, Android policy routing and network transitions. |
+| Android networking | Automatic WAN selection, Android policy-route monitoring for IPv4/IPv6, and data-plane recovery across Wi-Fi/cellular transitions. |
+| Node health checks | Fresh installs check every 50 seconds; network recovery starts fresh probes immediately. Updates preserve existing interval settings. |
 | Cellular fixes | Handles vendor QoS overwriting packet marks and namespace-ID collisions during runtime reconstruction. |
 | System trust store | Generates a CA bundle from Android certificates; node TLS verification remains enabled by default. |
 | Persistent data | Accounts, configuration, nodes and subscriptions are retained across updates and uninstall. |
@@ -62,9 +63,9 @@ flowchart LR
 | Kernel capabilities | Compatible eBPF/TC, BTF, veth and network namespace support. Vendor restrictions can affect operation. |
 | Verified device | OnePlus 13 / PJZ110, Android 17 / SDK 37. |
 | Verified kernel | `6.6.118-android15` AGKI, SELinux Enforcing. |
-| Validated version | Module `v0.1.0-alpha4`, core `3.1.0-android-ksu.3`. |
+| Validated version | Module `v0.1.0-alpha5`, core `3.1.0-android-ksu.4`. |
 
-Validation covers standard KernelSU installation, cold boot, Wi-Fi → 5G transitions, application connectivity and Google policy restoration. Cellular checks for Google, YouTube, Telegram and domestic direct traffic passed; the user confirmed the Play Store homepage after reboot.
+alpha5 fixes recovery when network state changes without a configuration change and avoids duplicate runtime reconstruction. Tests cover repeated Wi-Fi/5G transitions, interface changes with unchanged configuration, and strict TLS connectivity. The tested Wi-Fi network also provides an upstream proxy; Wi-Fi without one remains unverified. Cold-boot and user-confirmed Play Store homepage results were recorded on alpha4; see the validation record for alpha5-specific results and limits.
 
 Vendor restrictions prevent cgroup attachment on the verified device, so avoid `pname()` process-name routing. Validation does not cover every UDP/QUIC or IPv6 scenario, other devices, Play Store installation flows or purchases. See [validation details](android/docs/VALIDATION.md).
 
@@ -74,7 +75,7 @@ Vendor restrictions prevent cgroup attachment on the verified device, so avoid `
 
 Download the ARM64 ZIP from the [latest release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest), install it through KernelSU, then reboot.
 
-Currently validated asset: [`DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha4/DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip). Releases distribute the installation ZIP only.
+Currently validated asset: [`DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha5/DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip). Releases distribute the installation ZIP only.
 
 Stop other transparent proxy cores or VPNs before installation. The module checks for conflicting processes, but that check does not cover every possible competing proxy.
 

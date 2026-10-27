@@ -1,5 +1,5 @@
 diff --git a/crates/dae-build-support/src/lib.rs b/crates/dae-build-support/src/lib.rs
-index c30990a..e41721d 100644
+index c30990aa..e41721da 100644
 --- a/crates/dae-build-support/src/lib.rs
 +++ b/crates/dae-build-support/src/lib.rs
 @@ -133,6 +133,10 @@ pub mod native_ebpf_build {
@@ -13,8 +13,254 @@ index c30990a..e41721d 100644
          if !features.is_empty() {
              command.arg("--features").arg(features.join(","));
          }
+diff --git a/crates/dae-daemon/src/daed_product/runtime_manager.rs b/crates/dae-daemon/src/daed_product/runtime_manager.rs
+index 28896c6f..a02056cf 100644
+--- a/crates/dae-daemon/src/daed_product/runtime_manager.rs
++++ b/crates/dae-daemon/src/daed_product/runtime_manager.rs
+@@ -461,7 +461,13 @@ fn reload_prepared_product_runtime_with_config_content(
+         let state = inner
+             .lock()
+             .map_err(|_| "product runtime manager lock poisoned".to_owned())?;
++        // Host state can change while `wan_interface: auto` and the rest of
++        // the configuration remain identical. A recovery request must replace
++        // the physical runtime, not take the metadata-only NoChange path.
+         match (state.runtime.as_ref(), state.config.as_deref()) {
++            (Some(_), _) if source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE => {
++                RuntimeTransitionClass::KernelRebind
++            }
+             (Some(_), Some(active)) => classify_runtime_transition(
+                 active,
+                 state.transition_identity,
+@@ -508,6 +514,20 @@ fn reload_prepared_product_runtime_with_config_content(
+     }
+ }
+ 
++fn replacement_health_seed_snapshots(
++    source: &str,
++    values: impl IntoIterator<Item = Value>,
++) -> Vec<Value> {
++    // Reachability and latency belong to the old uplink. The new resident
++    // runtime already launches immediate bootstrap probes; carrying old alive
++    // or dead states can select an unreachable node until the next check.
++    if source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE {
++        Vec::new()
++    } else {
++        runtime_health_seed_snapshots(values)
++    }
++}
++
+ fn process_baseline_after_physical_start(
+     previous: Option<&Config>,
+     desired: &Config,
+@@ -726,8 +746,9 @@ fn replace_prepared_product_runtime_with_config_content(
+         .restore_cache
+         .then(|| previous_dns_reload_snapshot.clone())
+         .flatten();
+-    let latency_seed =
+-        runtime_health_seed_snapshots(latency_seed.iter().cloned().chain(live_latency_seed));
++    let latency_seed = replacement_health_seed_snapshots(
++        source, latency_seed.iter().cloned().chain(live_latency_seed),
++    );
+     let previous_cleanup_report = if previous_runtime_was_running {
+         cleanup_replacement_before_start(inner, lifecycle_epoch, previous_runtime)?
+     } else {
+@@ -746,6 +767,8 @@ fn replace_prepared_product_runtime_with_config_content(
+         Ok((runtime, mut report)) => {
+             if let Value::Object(report) = &mut report {
+                 report.insert("transition".to_owned(), json!(transition.name()));
++                report.insert("networkHealthSeedDiscarded".to_owned(),
++                    json!(source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE));
+                 report.insert(
+                     "previousRuntimeCleanup".to_owned(),
+                     previous_cleanup_report.clone().unwrap_or(Value::Null),
+diff --git a/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs b/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs
+index 03657f60..ce346331 100644
+--- a/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs
++++ b/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs
+@@ -141,7 +141,7 @@ fn reload_resident_interface_if_current(
+     request: &ResidentInterfaceRecoveryRequest,
+     state: Option<&Path>,
+ ) -> Result<(), String> {
+-    let (config, config_content) = {
++    let (config, config_content, transition_identity) = {
+         let inner = inner
+             .lock()
+             .map_err(|_| "product runtime manager lock poisoned".to_owned())?;
+@@ -170,9 +170,10 @@ fn reload_resident_interface_if_current(
+                 .clone()
+                 .ok_or_else(|| "interface recovery active config is missing".to_owned())?,
+             inner.config_content.clone(),
++            inner.transition_identity,
+         )
+     };
+-    let prepared = prepare_product_runtime_candidate(config)?;
++    let prepared = prepare_interface_recovery_candidate(config, transition_identity)?;
+     reload_prepared_product_runtime_with_config_content(
+         lifecycle,
+         inner,
+@@ -188,6 +189,19 @@ fn reload_resident_interface_if_current(
+     Ok(())
+ }
+ 
++// Recovery keeps the committed product identity. Losing it would make the
++// startup reconciler rebuild the same generation a second time.
++fn prepare_interface_recovery_candidate(
++    config: Arc<Config>,
++    identity: Option<RuntimeTransitionIdentity>,
++) -> Result<PreparedProductRuntime, String> {
++    let prepared = prepare_product_runtime_candidate(config)?;
++    Ok(match identity {
++        Some(identity) => prepared.with_transition_identity(identity),
++        None => prepared,
++    })
++}
++
+ fn recovered_runtime_identity(
+     inner: &Arc<Mutex<ProductRuntimeState>>,
+     request: &ResidentInterfaceRecoveryRequest,
+@@ -233,6 +247,72 @@ fn sleep_interface_recovery_poll(stop: &AtomicBool) {
+ mod tests {
+     use super::*;
+ 
++    #[test]
++    fn interface_recovery_drops_old_uplink_health_but_ordinary_reload_keeps_it() {
++        let snapshots = vec![
++            json!({"executionIdentity": "node-a", "networkDimension": "tcp4", "healthState": "alive"}),
++            json!({"executionIdentity": "node-b", "networkDimension": "tcp6", "healthState": "dead"}),
++        ];
++        assert!(
++            replacement_health_seed_snapshots(
++                PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE,
++                snapshots.clone()
++            )
++            .is_empty()
++        );
++        assert_eq!(
++            replacement_health_seed_snapshots("api", snapshots.clone()),
++            snapshots
++        );
++    }
++
++    #[test]
++    fn interface_recovery_rebinds_unchanged_auto_config_and_preserves_identity() {
++        with_product_runtime_fake_start_override(true, || {
++            let manager = ProductRuntimeManager::new();
++            let mut config = Config {
++                global: Default::default(),
++                subscription: Vec::new(),
++                node: Vec::new(),
++                group: Vec::new(),
++                routing: Default::default(),
++                dns: Default::default(),
++            };
++            config.global.wan_interface = Some(vec!["auto".to_owned()]);
++            let config = Arc::new(config);
++            let identity = Some(RuntimeTransitionIdentity {
++                routing_version: 3,
++                geodata_input_version: 5,
++            });
++            let reload = |source: &str| {
++                reload_prepared_product_runtime_with_config_content(
++                    manager.lifecycle(),
++                    manager.inner(),
++                    prepare_interface_recovery_candidate(Arc::clone(&config), identity).unwrap(),
++                    None,
++                    source,
++                    &[],
++                )
++                .unwrap()
++                .report
++            };
++            reload("test-start");
++            assert_eq!(reload("test-reload")["transition"], "NoChange");
++            for _ in 0..2 {
++                let report = reload(PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE);
++                assert_eq!(report["transition"], "KernelRebind");
++                assert_eq!(report["networkHealthSeedDiscarded"], true);
++                assert!(!report["previousRuntimeCleanup"].is_null());
++                assert_eq!(
++                    manager.inner().lock().unwrap().transition_identity,
++                    identity
++                );
++                // A later ordinary restore must not undo the recovered identity.
++                assert_eq!(reload("startup-restore")["transition"], "NoChange");
++            }
++        });
++    }
++
+     fn request(revision: u64) -> ResidentInterfaceRecoveryRequest {
+         ResidentInterfaceRecoveryRequest {
+             lifecycle_epoch: 7,
+diff --git a/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs b/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs
+index 59417aa3..3d7f1fc8 100644
+--- a/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs
++++ b/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs
+@@ -39,7 +39,7 @@ impl ProductRuntimeStartupRecoverySupervisor {
+                         })
+                         .unwrap_or(true);
+                     if retry_ready
+-                        && !runtime.is_running()
++                        && runtime.startup_restore_needed()
+                         && should_restore_runtime_on_start(&state).unwrap_or(false)
+                     {
+                         let result = restore_runtime_from_state(
+@@ -86,6 +86,19 @@ fn sleep_startup_recovery_poll(stop: &AtomicBool) {
+ }
+ 
+ impl ProductRuntimeManager {
++    fn startup_restore_needed(&self) -> bool {
++        // A physical replacement temporarily leaves the runtime slot empty,
++        // including after cleanup has finished but before the new bind starts.
++        let apply = self.domain.reconciler().summary();
++        if apply["state"] != "idle" || apply["preparingCount"] != 0 {
++            return false;
++        }
++        self.inner()
++            .lock()
++            .map(|state| state.runtime.is_none() && !state.cleanup.running)
++            .unwrap_or(false)
++    }
++
+     pub(in crate::daed_product) fn start_startup_recovery(
+         self: &Arc<Self>,
+         state: PathBuf,
+@@ -105,3 +118,34 @@ impl ProductRuntimeManager {
+         Ok(())
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn startup_recovery_does_not_queue_behind_an_active_interface_rebind() {
++        let runtime = ProductRuntimeManager::new();
++        let permit = runtime
++            .domain
++            .reconciler()
++            .begin_exclusive(RuntimeApplyIntent::InterfaceRecovery)
++            .unwrap();
++        assert!(!runtime.startup_restore_needed());
++        permit.finish("succeeded");
++        assert!(runtime.startup_restore_needed());
++    }
++
++    #[test]
++    fn startup_recovery_waits_for_interface_replacement_cleanup() {
++        let runtime = ProductRuntimeManager::new();
++        assert!(runtime.startup_restore_needed());
++        runtime
++            .inner()
++            .lock()
++            .unwrap()
++            .cleanup
++            .begin(1, "reload-replace");
++        assert!(!runtime.startup_restore_needed());
++    }
++}
 diff --git a/crates/dae-daemon/src/production_runtime_owner/command.rs b/crates/dae-daemon/src/production_runtime_owner/command.rs
-index 7d69ed0..4e3c7d5 100644
+index 7d69ed0e..4e3c7d5e 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/command.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/command.rs
 @@ -94,7 +94,7 @@ pub(super) fn iface_exists(iface: &str) -> bool {
@@ -27,7 +273,7 @@ index 7d69ed0..4e3c7d5 100644
          .any(|parent| PathBuf::from(parent).join(name).exists())
  }
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
-index d30b708..afee07e 100644
+index d30b7087..c5fe2f59 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
 @@ -243,6 +243,14 @@ fn observe_wan_network_state_from_paths(
@@ -45,56 +291,81 @@ index d30b708..afee07e 100644
      routes.retain(|route| route.interface != "lo" && policy.route_is_relevant(route));
      routes.sort();
      routes.dedup();
-@@ -304,6 +312,47 @@ fn read_routes(
+@@ -304,6 +312,72 @@ fn read_routes(
      }
  }
  
 +#[cfg(target_os = "android")]
 +fn android_policy_default_routes() -> Vec<DefaultRouteFingerprint> {
 +    use std::process::Command;
-+    for (flag, destination, family) in [
-+        ("-4", "1.1.1.1", NetworkFamily::Ipv4),
-+        ("-6", "2606:4700:4700::1111", NetworkFamily::Ipv6),
-+    ] {
-+        let Ok(output) = Command::new("/system/bin/ip")
-+            .args([flag, "route", "get", destination])
-+            .output()
-+        else {
-+            continue;
-+        };
-+        if !output.status.success() {
-+            continue;
-+        }
-+        let text = String::from_utf8_lossy(&output.stdout);
-+        let fields = text.split_whitespace().collect::<Vec<_>>();
-+        let Some(interface) = fields.windows(2).find(|pair| pair[0] == "dev").map(|pair| pair[1]) else {
-+            continue;
-+        };
-+        if interface == "lo" || interface == "dummy0" {
-+            continue;
-+        }
-+        let gateway = fields.windows(2)
-+            .find(|pair| pair[0] == "via")
-+            .and_then(|pair| pair[1].parse::<IpAddr>().ok())
-+            .unwrap_or_else(|| match family {
-+                NetworkFamily::Ipv4 => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
-+                NetworkFamily::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
-+            });
-+        return vec![DefaultRouteFingerprint {
-+            family,
-+            interface: interface.to_owned(),
-+            gateway,
-+            metric: 0,
-+        }];
++    android_policy_routes_from_outputs(
++        [
++            ("-4", "1.1.1.1", NetworkFamily::Ipv4),
++            ("-6", "2606:4700:4700::1111", NetworkFamily::Ipv6),
++        ]
++        .into_iter()
++        .filter_map(|(flag, destination, family)| {
++            let output = Command::new("/system/bin/ip")
++                .args([flag, "route", "get", destination])
++                .output()
++                .ok()?;
++            output
++                .status
++                .success()
++                .then(|| (family, String::from_utf8_lossy(&output.stdout).into_owned()))
++        }),
++    )
++}
++
++#[cfg(any(target_os = "android", test))]
++fn android_policy_routes_from_outputs(
++    outputs: impl IntoIterator<Item = (NetworkFamily, String)>,
++) -> Vec<DefaultRouteFingerprint> {
++    // Both families matter: during handover IPv4 may already use Wi-Fi while
++    // IPv6 still uses cellular. Match the startup resolver's complete WAN set.
++    outputs
++        .into_iter()
++        .filter_map(|(family, text)| android_policy_route_from_output(family, &text))
++        .collect()
++}
++
++#[cfg(any(target_os = "android", test))]
++fn android_policy_route_from_output(
++    family: NetworkFamily,
++    text: &str,
++) -> Option<DefaultRouteFingerprint> {
++    let fields = text.split_whitespace().collect::<Vec<_>>();
++    let Some(interface) = fields
++        .windows(2)
++        .find(|pair| pair[0] == "dev")
++        .map(|pair| pair[1])
++    else {
++        return None;
++    };
++    if interface == "lo" || interface == "dummy0" {
++        return None;
 +    }
-+    Vec::new()
++    let gateway = fields
++        .windows(2)
++        .find(|pair| pair[0] == "via")
++        .and_then(|pair| pair[1].parse::<IpAddr>().ok())
++        .unwrap_or_else(|| match family {
++            NetworkFamily::Ipv4 => IpAddr::V4(std::net::Ipv4Addr::UNSPECIFIED),
++            NetworkFamily::Ipv6 => IpAddr::V6(std::net::Ipv6Addr::UNSPECIFIED),
++        });
++    Some(DefaultRouteFingerprint {
++        family,
++        interface: interface.to_owned(),
++        gateway,
++        metric: 0,
++    })
 +}
 +
  fn merge_addresses(
      target: &mut BTreeMap<String, Vec<InterfaceAddressFingerprint>>,
      values: BTreeMap<String, Vec<InterfaceAddressFingerprint>>,
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
-index a9e3018..8845837 100644
+index a9e3018f..88458376 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/procfs.rs
 @@ -6,6 +6,11 @@ use std::path::Path;
@@ -118,8 +389,53 @@ index a9e3018..8845837 100644
  }
  
  fn ipv4_from_proc_hex(raw: &str) -> Result<Ipv4Addr, String> {
+diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/tests.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/tests.rs
+index de7c543d..4e179266 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/tests.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state/tests.rs
+@@ -131,3 +131,40 @@ fn configuration_without_wan_interfaces_skips_wan_observation_work() {
+         WanNetworkState::empty_verified()
+     );
+ }
++
++#[test]
++fn android_handover_observes_both_policy_route_families() {
++    let routes = android_policy_routes_from_outputs([
++        (
++            NetworkFamily::Ipv4,
++            "1.1.1.1 via 192.0.2.1 dev wlan0 table wlan0 src 192.0.2.2".into(),
++        ),
++        (
++            NetworkFamily::Ipv6,
++            "2606:4700:4700::1111 via fe80::1 dev rmnet_data4 table rmnet_data4 metric 1024".into(),
++        ),
++    ]);
++    assert_eq!(routes.len(), 2);
++    assert_eq!(routes[0].interface, "wlan0");
++    assert_eq!(routes[1].interface, "rmnet_data4");
++    assert_eq!(routes[1].family, NetworkFamily::Ipv6);
++}
++
++#[test]
++fn android_policy_routes_exclude_placeholder_and_missing_routes() {
++    let routes = android_policy_routes_from_outputs([
++        (
++            NetworkFamily::Ipv4,
++            "RTNETLINK answers: Network is unreachable".into(),
++        ),
++        (NetworkFamily::Ipv6, "default dev dummy0".into()),
++        (NetworkFamily::Ipv4, "local 1.1.1.1 dev lo".into()),
++        (
++            NetworkFamily::Ipv6,
++            "2606:4700:4700::1111 dev rmnet_data4 table rmnet_data4".into(),
++        ),
++    ]);
++    assert_eq!(routes.len(), 1);
++    assert_eq!(routes[0].interface, "rmnet_data4");
++    assert!(routes[0].gateway.is_unspecified());
++}
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
-index 0350e46..11f3d3f 100644
+index 0350e460..11f3d3fd 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
 @@ -115,18 +115,25 @@ pub(super) fn resident_runtime_options(
@@ -157,7 +473,7 @@ index 0350e46..11f3d3f 100644
  
  fn cleanup_runtime_artifact_root(root: &Path, prefix: &str, current_artifact_dir: Option<&Path>) {
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
-index f64f956..f7eb2a3 100644
+index f64f9560..f7eb2a35 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
 @@ -239,6 +239,47 @@ pub(super) fn start_with_options(
@@ -218,7 +534,7 @@ index f64f956..f7eb2a3 100644
              if ok {
                  let link_layer = match interface_link_layer(iface) {
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
-index 5467a8c..e32deef 100644
+index 5467a8c7..0441e4d8 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
 @@ -22,6 +22,7 @@ pub(super) const ARPHRD_CSLIP: u16 = 257;
@@ -252,7 +568,7 @@ index 5467a8c..e32deef 100644
          _ => TcAttachLayer::L2,
      }
  }
-@@ -431,21 +437,41 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
+@@ -431,21 +437,47 @@ fn default_route_ifaces_from_ip(family: &str) -> Result<Vec<String>, String> {
          .args([family, "-o", "route", "show", "default"])
          .output()
          .map_err(|err| format!("failed to run ip {family} route show default: {err}"))?;
@@ -265,6 +581,7 @@ index 5467a8c..e32deef 100644
 -                String::new()
 -            } else {
 -                format!(": {stderr}")
++    #[cfg(not(target_os = "android"))]
 +    if output.status.success() {
 +        let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&output.stdout));
 +        if !ifaces.is_empty() {
@@ -286,6 +603,11 @@ index 5467a8c..e32deef 100644
 +    {
 +        if probe_output.status.success() {
 +            let ifaces = parse_default_route_ifaces(&String::from_utf8_lossy(&probe_output.stdout));
++            #[cfg(target_os = "android")]
++            let ifaces = ifaces
++                .into_iter()
++                .filter(|iface| iface != "lo" && iface != "dummy0")
++                .collect::<Vec<_>>();
 +            if !ifaces.is_empty() {
 +                return Ok(ifaces);
              }
@@ -307,7 +629,7 @@ index 5467a8c..e32deef 100644
  }
  
  fn parse_default_route_ifaces(output: &str) -> Vec<String> {
-@@ -596,6 +622,8 @@ mod tests {
+@@ -596,6 +628,8 @@ mod tests {
          assert_eq!(link_layer_from_arphrd(ARPHRD_SLIP6), TcAttachLayer::L3);
          assert_eq!(link_layer_from_arphrd(ARPHRD_CSLIP6), TcAttachLayer::L3);
          assert_eq!(link_layer_from_arphrd(ARPHRD_PPP), TcAttachLayer::L3);
@@ -317,7 +639,7 @@ index 5467a8c..e32deef 100644
          assert_eq!(link_layer_from_arphrd(ARPHRD_TUNNEL6), TcAttachLayer::L3);
          assert_eq!(link_layer_from_arphrd(ARPHRD_NONE), TcAttachLayer::L3);
 diff --git a/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs b/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
-index 9530970..3e4aaf3 100644
+index 9530970f..3e4aaf35 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/topology/netns_setup.rs
 @@ -117,11 +117,23 @@ pub(crate) fn assign_production_netns_id(
@@ -363,7 +685,7 @@ index 9530970..3e4aaf3 100644
      steps
          .iter()
 diff --git a/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs b/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs
-index 98fb03e..6e44f20 100644
+index 98fb03e1..6e44f203 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/topology/tests.rs
 @@ -36,4 +36,28 @@ mod tests {
@@ -396,7 +718,7 @@ index 98fb03e..6e44f20 100644
 +    }
  }
 diff --git a/crates/dae-ebpf-program/Cargo.toml b/crates/dae-ebpf-program/Cargo.toml
-index f785608..daa1810 100644
+index f785608f..daa18102 100644
 --- a/crates/dae-ebpf-program/Cargo.toml
 +++ b/crates/dae-ebpf-program/Cargo.toml
 @@ -13,6 +13,7 @@ default = ["tproxy-program"]
@@ -408,7 +730,7 @@ index f785608..daa1810 100644
  [dependencies]
  aya-ebpf.workspace = true
 diff --git a/crates/dae-ebpf-program/src/routing.rs b/crates/dae-ebpf-program/src/routing.rs
-index 6dac30a..00382a5 100644
+index 6dac30a6..00382a53 100644
 --- a/crates/dae-ebpf-program/src/routing.rs
 +++ b/crates/dae-ebpf-program/src/routing.rs
 @@ -14,7 +14,12 @@ use crate::packet::{self, IPPROTO_TCP, ParsedPacket};
@@ -502,7 +824,7 @@ index 6dac30a..00382a5 100644
          let mut out = [0; TASK_COMM_LEN];
          for (dst, src) in out.iter_mut().zip(bytes.iter().copied()) {
 diff --git a/crates/dae-ebpf-support/src/aya_loader/netns.rs b/crates/dae-ebpf-support/src/aya_loader/netns.rs
-index 174d2a6..9704c63 100644
+index 174d2a6a..9704c63c 100644
 --- a/crates/dae-ebpf-support/src/aya_loader/netns.rs
 +++ b/crates/dae-ebpf-support/src/aya_loader/netns.rs
 @@ -56,13 +56,36 @@ impl Drop for NetnsGuard {
@@ -546,7 +868,7 @@ index 174d2a6..9704c63 100644
  
  pub(super) fn setns(fd: i32) -> io::Result<()> {
 diff --git a/crates/dae-ebpf-support/src/cgroup.rs b/crates/dae-ebpf-support/src/cgroup.rs
-index f026125..e3b396f 100644
+index f0261256..e3b396f9 100644
 --- a/crates/dae-ebpf-support/src/cgroup.rs
 +++ b/crates/dae-ebpf-support/src/cgroup.rs
 @@ -130,6 +130,23 @@ pub fn dae_cgroup_attach_matrix() -> Vec<DaeCgroupAttachLine> {
@@ -574,7 +896,7 @@ index f026125..e3b396f 100644
      detect_cgroup2_mount_from_proc_mounts(&mounts)
          .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "cgroup2 not mounted"))
 diff --git a/crates/dae-ebpf-support/src/temporary_program.rs b/crates/dae-ebpf-support/src/temporary_program.rs
-index 05fa84a..eef7105 100644
+index 05fa84ae..eef71053 100644
 --- a/crates/dae-ebpf-support/src/temporary_program.rs
 +++ b/crates/dae-ebpf-support/src/temporary_program.rs
 @@ -11,6 +11,10 @@ const BPF_MOV: u8 = 0xb0;
@@ -607,7 +929,7 @@ index 05fa84a..eef7105 100644
              size_of::<libc::c_int>() as libc::socklen_t,
          )
 diff --git a/crates/dae-ebpf-support/src/tproxy_listener.rs b/crates/dae-ebpf-support/src/tproxy_listener.rs
-index d991047..544db1f 100644
+index d9910473..544db1f5 100644
 --- a/crates/dae-ebpf-support/src/tproxy_listener.rs
 +++ b/crates/dae-ebpf-support/src/tproxy_listener.rs
 @@ -96,7 +96,7 @@ pub fn open_transparent_udp_socket_bound(addr: SocketAddr) -> io::Result<UdpSock
@@ -620,7 +942,7 @@ index d991047..544db1f 100644
              Ok(file) => return Ok(file),
              Err(err) => last_err = Some(err),
 diff --git a/crates/dae-product-control/src/network.rs b/crates/dae-product-control/src/network.rs
-index 4fe1301..383318c 100644
+index 4fe13016..383318c2 100644
 --- a/crates/dae-product-control/src/network.rs
 +++ b/crates/dae-product-control/src/network.rs
 @@ -120,7 +120,7 @@ pub fn product_control_helper_so_mark() -> io::Result<Option<u32>> {
@@ -648,7 +970,7 @@ index 4fe1301..383318c 100644
      }
      Ok(())
 diff --git a/crates/dae-product-geodata/src/helper.rs b/crates/dae-product-geodata/src/helper.rs
-index 260bd1a..a2044a0 100644
+index 260bd1a4..a2044a0d 100644
 --- a/crates/dae-product-geodata/src/helper.rs
 +++ b/crates/dae-product-geodata/src/helper.rs
 @@ -15,7 +15,11 @@ pub const GEODATA_HELPER_MAX_REQUEST_BYTES: usize = 64 * 1024;
@@ -664,7 +986,7 @@ index 260bd1a..a2044a0 100644
  #[derive(Clone, Debug, Eq, PartialEq)]
  pub struct GeodataPreparedDownload {
 diff --git a/crates/dae-product-persistence/src/state/schema.rs b/crates/dae-product-persistence/src/state/schema.rs
-index 7f8f565..6b76e94 100644
+index 7f8f5651..6b76e945 100644
 --- a/crates/dae-product-persistence/src/state/schema.rs
 +++ b/crates/dae-product-persistence/src/state/schema.rs
 @@ -158,6 +158,12 @@ pub fn apply_state_schema(conn: &Connection) -> io::Result<()> {
@@ -681,7 +1003,7 @@ index 7f8f565..6b76e94 100644
          conn,
          "systems",
 diff --git a/crates/dae-product-subscription/src/helper_process.rs b/crates/dae-product-subscription/src/helper_process.rs
-index 5ad160e..544bd8c 100644
+index 5ad160e5..544bd8c7 100644
 --- a/crates/dae-product-subscription/src/helper_process.rs
 +++ b/crates/dae-product-subscription/src/helper_process.rs
 @@ -15,7 +15,11 @@ use crate::{
@@ -697,7 +1019,7 @@ index 5ad160e..544bd8c 100644
  const SUBSCRIPTION_PREPARE_HELPER_SO_MARK_ENV: &str = "DAED_CONTROL_HELPER_SO_MARK";
  
 diff --git a/crates/dae-resident-model/src/model.rs b/crates/dae-resident-model/src/model.rs
-index 9a19152..dbba3c5 100644
+index 9a19152c..dbba3c5b 100644
 --- a/crates/dae-resident-model/src/model.rs
 +++ b/crates/dae-resident-model/src/model.rs
 @@ -31,13 +31,53 @@ pub use xhttp::{

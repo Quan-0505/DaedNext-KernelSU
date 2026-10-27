@@ -2,7 +2,7 @@
 
 ## 修改服务 / WebUI 后重新打包
 
-Python 3.10+、Git 即可完成这一流程，Windows 和 Linux 均可使用。它复用 alpha4 发布包内已验证的核心、面板、NDK 运行库与 geodata，不重新编译 Rust。
+Python 3.10+、Git 即可完成这一流程，Windows 和 Linux 均可使用。它复用 alpha5 发布包内已验证的核心、面板、NDK 运行库与 geodata，不重新编译 Rust。
 
 ```sh
 git clone https://github.com/Quan-0505/DaedNext-KernelSU.git
@@ -12,7 +12,7 @@ python android/tools/seed-defaults.py
 python android/tools/package.py
 ```
 
-安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中，不生成单独校验附件。离线已有 alpha4 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
+安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中，不生成单独校验附件。离线已有 alpha5 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
 
 发布新版本前修改 `android/module/module.prop` 的 version/versionCode，更新 WebUI 版本标识及 CHANGELOG。不要把用户数据库复制到 module/defaults；默认数据库由源码 schema 生成。
 

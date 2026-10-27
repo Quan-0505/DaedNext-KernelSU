@@ -141,7 +141,7 @@ fn reload_resident_interface_if_current(
     request: &ResidentInterfaceRecoveryRequest,
     state: Option<&Path>,
 ) -> Result<(), String> {
-    let (config, config_content) = {
+    let (config, config_content, transition_identity) = {
         let inner = inner
             .lock()
             .map_err(|_| "product runtime manager lock poisoned".to_owned())?;
@@ -170,9 +170,10 @@ fn reload_resident_interface_if_current(
                 .clone()
                 .ok_or_else(|| "interface recovery active config is missing".to_owned())?,
             inner.config_content.clone(),
+            inner.transition_identity,
         )
     };
-    let prepared = prepare_product_runtime_candidate(config)?;
+    let prepared = prepare_interface_recovery_candidate(config, transition_identity)?;
     reload_prepared_product_runtime_with_config_content(
         lifecycle,
         inner,
@@ -186,6 +187,19 @@ fn reload_resident_interface_if_current(
         super::activation_identity::persist_recovered_runtime_identity(state, &identity)?;
     }
     Ok(())
+}
+
+// Recovery keeps the committed product identity. Losing it would make the
+// startup reconciler rebuild the same generation a second time.
+fn prepare_interface_recovery_candidate(
+    config: Arc<Config>,
+    identity: Option<RuntimeTransitionIdentity>,
+) -> Result<PreparedProductRuntime, String> {
+    let prepared = prepare_product_runtime_candidate(config)?;
+    Ok(match identity {
+        Some(identity) => prepared.with_transition_identity(identity),
+        None => prepared,
+    })
 }
 
 fn recovered_runtime_identity(
@@ -232,6 +246,72 @@ fn sleep_interface_recovery_poll(stop: &AtomicBool) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interface_recovery_drops_old_uplink_health_but_ordinary_reload_keeps_it() {
+        let snapshots = vec![
+            json!({"executionIdentity": "node-a", "networkDimension": "tcp4", "healthState": "alive"}),
+            json!({"executionIdentity": "node-b", "networkDimension": "tcp6", "healthState": "dead"}),
+        ];
+        assert!(
+            replacement_health_seed_snapshots(
+                PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE,
+                snapshots.clone()
+            )
+            .is_empty()
+        );
+        assert_eq!(
+            replacement_health_seed_snapshots("api", snapshots.clone()),
+            snapshots
+        );
+    }
+
+    #[test]
+    fn interface_recovery_rebinds_unchanged_auto_config_and_preserves_identity() {
+        with_product_runtime_fake_start_override(true, || {
+            let manager = ProductRuntimeManager::new();
+            let mut config = Config {
+                global: Default::default(),
+                subscription: Vec::new(),
+                node: Vec::new(),
+                group: Vec::new(),
+                routing: Default::default(),
+                dns: Default::default(),
+            };
+            config.global.wan_interface = Some(vec!["auto".to_owned()]);
+            let config = Arc::new(config);
+            let identity = Some(RuntimeTransitionIdentity {
+                routing_version: 3,
+                geodata_input_version: 5,
+            });
+            let reload = |source: &str| {
+                reload_prepared_product_runtime_with_config_content(
+                    manager.lifecycle(),
+                    manager.inner(),
+                    prepare_interface_recovery_candidate(Arc::clone(&config), identity).unwrap(),
+                    None,
+                    source,
+                    &[],
+                )
+                .unwrap()
+                .report
+            };
+            reload("test-start");
+            assert_eq!(reload("test-reload")["transition"], "NoChange");
+            for _ in 0..2 {
+                let report = reload(PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE);
+                assert_eq!(report["transition"], "KernelRebind");
+                assert_eq!(report["networkHealthSeedDiscarded"], true);
+                assert!(!report["previousRuntimeCleanup"].is_null());
+                assert_eq!(
+                    manager.inner().lock().unwrap().transition_identity,
+                    identity
+                );
+                // A later ordinary restore must not undo the recovered identity.
+                assert_eq!(reload("startup-restore")["transition"], "NoChange");
+            }
+        });
+    }
 
     fn request(revision: u64) -> ResidentInterfaceRecoveryRequest {
         ResidentInterfaceRecoveryRequest {

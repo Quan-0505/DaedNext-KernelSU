@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>DaeNext</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header><div class="brand"><span class="mark">D</span><div><h1>DaeNext</h1><p>Android · KernelSU</p></div></div><span class="version">0.1.0 α4</span></header>
+<header><div class="brand"><span class="mark">D</span><div><h1>DaeNext</h1><p>Android · KernelSU</p></div></div><span class="version">0.1.0 α5</span></header>
 <section class="status-card"><div class="eyebrow">代理服务</div><div class="headline"><span class="indicator" id="indicator"></span><h2 id="state">正在读取</h2></div><p id="detail">连接设备服务…</p><div class="stats"><div><span>当前网络</span><b id="network">—</b></div><div><span>服务进程</span><b id="pid">—</b></div></div><div class="actions"><button id="start" class="primary">启动服务</button><button id="stop">停止</button><button id="restart">重启</button></div></section>
 <a class="panel-card" href="http://127.0.0.1:2023/" id="panel"><div><h3>打开管理面板</h3><p>节点、订阅、分流规则与实时连接</p></div><span>↗</span></a>
 <section class="settings"><label><div><h3>开机启动</h3><p>启动后恢复上次的内核运行状态</p></div><input id="autostart" type="checkbox" role="switch"></label><label><div><h3>Google 服务联网兼容</h3><p>运行内核时恢复商店与 Google 服务联网，停止时还原。仅支持已验证的 ColorOS 系统。</p></div><input id="google-network" type="checkbox" role="switch"></label><div class="tools"><button id="reload">重载配置</button><button id="backup">备份数据</button><button id="logs">查看日志</button></div></section>

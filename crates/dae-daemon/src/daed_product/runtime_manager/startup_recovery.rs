@@ -39,7 +39,7 @@ impl ProductRuntimeStartupRecoverySupervisor {
                         })
                         .unwrap_or(true);
                     if retry_ready
-                        && !runtime.is_running()
+                        && runtime.startup_restore_needed()
                         && should_restore_runtime_on_start(&state).unwrap_or(false)
                     {
                         let result = restore_runtime_from_state(
@@ -86,6 +86,19 @@ fn sleep_startup_recovery_poll(stop: &AtomicBool) {
 }
 
 impl ProductRuntimeManager {
+    fn startup_restore_needed(&self) -> bool {
+        // A physical replacement temporarily leaves the runtime slot empty,
+        // including after cleanup has finished but before the new bind starts.
+        let apply = self.domain.reconciler().summary();
+        if apply["state"] != "idle" || apply["preparingCount"] != 0 {
+            return false;
+        }
+        self.inner()
+            .lock()
+            .map(|state| state.runtime.is_none() && !state.cleanup.running)
+            .unwrap_or(false)
+    }
+
     pub(in crate::daed_product) fn start_startup_recovery(
         self: &Arc<Self>,
         state: PathBuf,
@@ -103,5 +116,36 @@ impl ProductRuntimeManager {
         current.shutdown();
         *current = supervisor;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn startup_recovery_does_not_queue_behind_an_active_interface_rebind() {
+        let runtime = ProductRuntimeManager::new();
+        let permit = runtime
+            .domain
+            .reconciler()
+            .begin_exclusive(RuntimeApplyIntent::InterfaceRecovery)
+            .unwrap();
+        assert!(!runtime.startup_restore_needed());
+        permit.finish("succeeded");
+        assert!(runtime.startup_restore_needed());
+    }
+
+    #[test]
+    fn startup_recovery_waits_for_interface_replacement_cleanup() {
+        let runtime = ProductRuntimeManager::new();
+        assert!(runtime.startup_restore_needed());
+        runtime
+            .inner()
+            .lock()
+            .unwrap()
+            .cleanup
+            .begin(1, "reload-replace");
+        assert!(!runtime.startup_restore_needed());
     }
 }

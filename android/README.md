@@ -1,6 +1,6 @@
 # KernelSU Android integration
 
-当前模块：**v0.1.0-alpha4**；核心：**3.1.0-android-ksu.3**。
+当前模块：**v0.1.0-alpha5**；核心：**3.1.0-android-ksu.4**。
 
 本目录只包含可公开维护的模块源码、空白默认配置生成器、构建入口和 Android 补丁。Rust 核心完整源码位于仓库根目录，已经包含 Android 修改，克隆后不要重复应用补丁。
 

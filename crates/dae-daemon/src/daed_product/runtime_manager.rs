@@ -461,7 +461,13 @@ fn reload_prepared_product_runtime_with_config_content(
         let state = inner
             .lock()
             .map_err(|_| "product runtime manager lock poisoned".to_owned())?;
+        // Host state can change while `wan_interface: auto` and the rest of
+        // the configuration remain identical. A recovery request must replace
+        // the physical runtime, not take the metadata-only NoChange path.
         match (state.runtime.as_ref(), state.config.as_deref()) {
+            (Some(_), _) if source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE => {
+                RuntimeTransitionClass::KernelRebind
+            }
             (Some(_), Some(active)) => classify_runtime_transition(
                 active,
                 state.transition_identity,
@@ -505,6 +511,20 @@ fn reload_prepared_product_runtime_with_config_content(
                 transition,
             )
         }
+    }
+}
+
+fn replacement_health_seed_snapshots(
+    source: &str,
+    values: impl IntoIterator<Item = Value>,
+) -> Vec<Value> {
+    // Reachability and latency belong to the old uplink. The new resident
+    // runtime already launches immediate bootstrap probes; carrying old alive
+    // or dead states can select an unreachable node until the next check.
+    if source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE {
+        Vec::new()
+    } else {
+        runtime_health_seed_snapshots(values)
     }
 }
 
@@ -726,8 +746,9 @@ fn replace_prepared_product_runtime_with_config_content(
         .restore_cache
         .then(|| previous_dns_reload_snapshot.clone())
         .flatten();
-    let latency_seed =
-        runtime_health_seed_snapshots(latency_seed.iter().cloned().chain(live_latency_seed));
+    let latency_seed = replacement_health_seed_snapshots(
+        source, latency_seed.iter().cloned().chain(live_latency_seed),
+    );
     let previous_cleanup_report = if previous_runtime_was_running {
         cleanup_replacement_before_start(inner, lifecycle_epoch, previous_runtime)?
     } else {
@@ -746,6 +767,8 @@ fn replace_prepared_product_runtime_with_config_content(
         Ok((runtime, mut report)) => {
             if let Value::Object(report) = &mut report {
                 report.insert("transition".to_owned(), json!(transition.name()));
+                report.insert("networkHealthSeedDiscarded".to_owned(),
+                    json!(source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE));
                 report.insert(
                     "previousRuntimeCleanup".to_owned(),
                     previous_cleanup_report.clone().unwrap_or(Value::Null),
