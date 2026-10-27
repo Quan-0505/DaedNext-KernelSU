@@ -79,6 +79,14 @@ fn local_control_reload_uses_live_runtime_state() {
         json!("runtime is required but not running")
     );
 
+    app.runtime.set_network_policy_paused(true).unwrap();
+    let bypass = handle_local_control_status(&app);
+    assert_eq!(bypass["ready"], true);
+    assert_eq!(bypass["networkPolicyPaused"], true);
+    assert_eq!(bypass["runtimeRunning"], false);
+    assert_eq!(bypass["runtimeRequired"], true);
+    app.runtime.set_network_policy_paused(false).unwrap();
+
     app.runtime.set_runtime_required_for_readiness(false);
     let response = handle_local_control_reload(&app);
     assert_eq!(response["ok"], json!(true));

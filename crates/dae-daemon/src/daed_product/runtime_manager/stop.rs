@@ -12,6 +12,49 @@ pub(in crate::daed_product) struct PreparedProductRuntimeStop<'a> {
 }
 
 impl ProductRuntimeManager {
+    pub(in crate::daed_product) fn network_policy_paused(&self) -> bool {
+        self.inner()
+            .lock()
+            .map(|s| s.network_policy_paused)
+            .unwrap_or(false)
+    }
+
+    pub(in crate::daed_product) fn network_policy_bypassed(&self) -> bool {
+        self.inner()
+            .lock()
+            .map(|s| s.network_policy_paused && s.runtime.is_none() && !s.cleanup.running)
+            .unwrap_or(false)
+    }
+
+    pub(in crate::daed_product) fn set_network_policy_paused(
+        &self,
+        direct: bool,
+    ) -> Result<(), String> {
+        {
+            let state = self
+                .inner()
+                .lock()
+                .map_err(|_| "runtime policy lock poisoned")?;
+            if state.network_policy_paused == direct && (!direct || state.runtime.is_none()) {
+                return Ok(());
+            }
+        }
+        if direct {
+            // Serialize with manual start/stop and cancel stale preparation. Do
+            // not persist a user stop: the saved running intent must survive.
+            let mut stop = self.prepare_stop()?;
+            stop.inner.network_policy_paused = true;
+            stop.commit_and_wait("wifi-policy-bypass")?;
+        } else {
+            self.inner()
+                .lock()
+                .map_err(|_| "runtime policy lock poisoned")?
+                .network_policy_paused = false;
+            // Startup recovery restores only when the saved user intent is on.
+        }
+        Ok(())
+    }
+
     pub(in crate::daed_product) fn prepare_stop(
         &self,
     ) -> Result<PreparedProductRuntimeStop<'_>, String> {

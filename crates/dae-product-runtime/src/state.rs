@@ -9,6 +9,7 @@ use crate::{RuntimeApplyState, RuntimeTrafficCarry, RuntimeTransitionIdentity};
 #[derive(Debug)]
 pub struct ProductRuntimeState<R> {
     pub runtime: Option<R>,
+    pub network_policy_paused: bool,
     pub config: Option<Arc<Config>>,
     pub config_content: Option<Arc<str>>,
     pub last_error: Option<String>,
@@ -32,6 +33,7 @@ impl<R> Default for ProductRuntimeState<R> {
     fn default() -> Self {
         Self {
             runtime: None,
+            network_policy_paused: false,
             config: None,
             config_content: None,
             last_error: None,

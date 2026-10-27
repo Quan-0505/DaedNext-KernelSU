@@ -132,6 +132,14 @@ fn request_local_control_status(path: &Path, timeout: Duration) -> io::Result<Va
     request_local_control(path, timeout, json!({"op": LOCAL_CONTROL_OP_STATUS}))
 }
 
+pub fn request_local_control_network_policy(path: &Path, direct: bool) -> io::Result<Value> {
+    request_local_control(
+        path,
+        Duration::from_secs(25),
+        json!({"op": "network-policy", "direct": direct}),
+    )
+}
+
 fn request_local_control(path: &Path, timeout: Duration, request: Value) -> io::Result<Value> {
     let mut stream = UnixStream::connect(path)?;
     stream.set_read_timeout(Some(timeout))?;

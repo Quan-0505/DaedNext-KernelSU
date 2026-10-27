@@ -5,7 +5,12 @@ export MODDIR
 echo $$ > "$RUN/supervisor.pid"
 child=
 readiness_pid=
+policy_pid=
 cleanup() {
+ shutdown_policy=$policy_pid
+ policy_pid=
+ [ -n "$shutdown_policy" ] && kill -TERM "$shutdown_policy" 2>/dev/null
+ [ -n "$shutdown_policy" ] && wait "$shutdown_policy" 2>/dev/null
  shutdown_readiness=$readiness_pid
  readiness_pid=
  [ -n "$shutdown_readiness" ] && kill -TERM "$shutdown_readiness" 2>/dev/null
@@ -24,6 +29,10 @@ attempt=0
 while [ "$attempt" -lt 3 ]; do
  [ -e "$STATE/stop-request" ] || [ -e "$MODDIR/disable" ] || [ -e "$MODDIR/remove" ] && break
  [ -f "$STATE/logs/daemon.log" ] && [ "$("$BB" wc -c < "$STATE/logs/daemon.log")" -gt 1048576 ] && "$BB" mv "$STATE/logs/daemon.log" "$STATE/logs/daemon.previous.log"
+ if ! "$DAEMON" wifi-policy init --config "$STATE/wifi-policy.json" --state "$DAE_NETWORK_POLICY_STATE" >/dev/null 2>> "$STATE/logs/service.log"; then
+  "$BB" rm -f "$DAE_NETWORK_POLICY_STATE"
+  log 'Wi-Fi policy could not be loaded; normal proxy rules retained'
+ fi
  log "starting daemon attempt=$attempt"
  "$DAEMON" run -c "$CONFIG" --listen 127.0.0.1:2023 --web-root "$MODDIR/panel" --control "$RUN/control.sock" >> "$STATE/logs/daemon.log" 2>&1 &
  child=$!
@@ -48,6 +57,10 @@ while [ "$attempt" -lt 3 ]; do
    cleanup
    exit 0
   fi
+  "$DAEMON" wifi-policy sync --config "$STATE/wifi-policy.json" --state "$DAE_NETWORK_POLICY_STATE" --control "$RUN/control.sock" >/dev/null 2>> "$STATE/logs/service.log" &
+  policy_pid=$!
+  wait "$policy_pid" || true
+  policy_pid=
   if [ "$compat_tick" = 0 ]; then
    /system/bin/sh "$MODDIR/scripts/google-network.sh" sync || true
   fi

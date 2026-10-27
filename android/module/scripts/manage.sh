@@ -55,6 +55,10 @@ start_service() {
  return 1
 }
 case "$1" in
+ wifi-policy)
+  [ "$2" = set ] && [ "$#" = 3 ] || { echo 'Usage: daenextctl wifi-policy set BASE64_JSON' >&2; exit 2; }
+  "$DAEMON" wifi-policy set --config "$STATE/wifi-policy.json" --state "$DAE_NETWORK_POLICY_STATE" --data "$3"
+  ;;
  start) start_service ;;
  stop) stop_service && "$BB" rm -f "$STATE/last-error" ;;
  restart) stop_service && start_service ;;
@@ -72,6 +76,7 @@ case "$1" in
   stop_service || exit 1
   archive="$STATE/backups/daenext-$("$BB" date '+%Y%m%d-%H%M%S').tar.gz"
   set -- config assets certs
+  [ ! -f "$STATE/wifi-policy.json" ] || set -- "$@" wifi-policy.json
   [ ! -f "$STATE/google-network-enabled" ] || set -- "$@" google-network-enabled
   "$BB" tar -czf "$archive" -C "$STATE" "$@"
   result=$?

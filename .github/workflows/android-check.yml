@@ -26,6 +26,7 @@ jobs:
           find android -name '*.sh' -print0 | xargs -0 -n1 bash -n
           bash -n android/module/bin/daenextctl
           node --check android/module/webroot/app.js
+          node android/tests/webui-wifi.test.mjs
           git diff --check
       - name: Verify empty generated defaults
         run: |

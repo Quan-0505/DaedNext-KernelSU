@@ -4,6 +4,13 @@ export MODDIR
 . "$MODDIR/scripts/common.sh"
 [ "$(id -u)" = 0 ] || { echo 'Root is required.' >&2; exit 1; }
 case "${1:-status}" in
+ wifi-policy)
+  case "${2:-get}" in
+   get|status) exec "$DAEMON" wifi-policy "${2:-get}" --config "$STATE/wifi-policy.json" --state "$DAE_NETWORK_POLICY_STATE" ;;
+   set) exec /system/bin/sh "$MODDIR/scripts/manage.sh" "$@" ;;
+   *) echo 'Usage: daenextctl wifi-policy {get|status|set BASE64_JSON}' >&2; exit 2 ;;
+  esac
+  ;;
  status)
   state=stopped; pid=null; report=null
   p=$(daemon_pid) && {
@@ -17,7 +24,8 @@ case "${1:-status}" in
   auto=true; [ -f "$STATE/no-autostart" ] && auto=false
   google=false; [ -f "$STATE/google-network-enabled" ] && google=true
   iface=$(/system/bin/ip -4 route get 1.1.1.1 2>/dev/null | "$BB" sed -n 's/.* dev \([^ ]*\).*/\1/p' | "$BB" head -1)
-  printf '{"state":"%s","pid":%s,"autostart":%s,"googleNetworkCompat":%s,"interface":"%s","dashboard":"http://127.0.0.1:2023/","readiness":%s}\n' "$state" "$pid" "$auto" "$google" "$iface" "$report"
+  wifi=$("$DAEMON" wifi-policy status --config "$STATE/wifi-policy.json" --state "$DAE_NETWORK_POLICY_STATE" 2>/dev/null) || wifi=null
+  printf '{"state":"%s","pid":%s,"autostart":%s,"googleNetworkCompat":%s,"interface":"%s","dashboard":"http://127.0.0.1:2023/","readiness":%s,"wifiPolicy":%s}\n' "$state" "$pid" "$auto" "$google" "$iface" "$report" "$wifi"
   ;;
  logs) "$BB" tail -n 80 "$STATE/logs/service.log" "$CONFIG/logs/current.jsonl" 2>/dev/null ;;
  diagnose)
@@ -30,5 +38,5 @@ case "${1:-status}" in
   "$0" logs
   ;;
  start|stop|restart|reload|backup|autostart|google-network) exec /system/bin/sh "$MODDIR/scripts/manage.sh" "$@" ;;
- *) echo 'Usage: daenextctl {start|stop|restart|reload|status|logs|diagnose|backup|autostart on|off|google-network on|off}' >&2; exit 2 ;;
+ *) echo 'Usage: daenextctl {start|stop|restart|reload|status|logs|diagnose|backup|autostart on|off|google-network on|off|wifi-policy get|set BASE64_JSON}' >&2; exit 2 ;;
 esac

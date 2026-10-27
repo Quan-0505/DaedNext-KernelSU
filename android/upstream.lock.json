@@ -8,11 +8,11 @@
     "commit": "dc4af0e4d9e855e0d6ba6d719a2cc70f0be64327",
     "pnpm": "10.24.0"
   },
-  "daemonVersion": "3.1.0-android-ksu.4",
+  "daemonVersion": "3.1.0-android-ksu.5",
   "runtimeSeed": {
     "repository": "Quan-0505/DaedNext-KernelSU",
-    "tag": "v0.1.0-alpha5",
-    "asset": "DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip",
-    "sha256": "790494a26c50375019c64564249fb60395d9a4a35c08a4f3d9489b6367bc01e0"
+    "tag": "v0.1.0-alpha6",
+    "asset": "DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip",
+    "sha256": "f3706e9a5d4f1167a38a90d0c0b9db178b0fc596d4aa51260960c5ab49ecbd78"
   }
 }

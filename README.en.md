@@ -34,6 +34,7 @@ The integration focuses on Android deployment: service lifecycle, system trust s
 | Two management interfaces | KernelSU WebUI for service controls and compatibility options; DaedNext for nodes, subscriptions, groups, DNS, routing and logs. |
 | Service lifecycle | Start, stop, restart, reload, boot recovery, readiness checks and consistent backups. |
 | Android networking | Automatic WAN selection, Android policy-route monitoring for IPv4/IPv6, and data-plane recovery across Wi-Fi/cellular transitions. |
+| Wi-Fi policies | Blacklist: listed networks bypass the phone proxy; whitelist: listed networks use it. Cellular policy is independent, and manual stop is preserved. |
 | Node health checks | Fresh installs check every 50 seconds; network recovery starts fresh probes immediately. Updates preserve existing interval settings. |
 | Cellular fixes | Handles vendor QoS overwriting packet marks and namespace-ID collisions during runtime reconstruction. |
 | System trust store | Generates a CA bundle from Android certificates; node TLS verification remains enabled by default. |
@@ -63,9 +64,9 @@ flowchart LR
 | Kernel capabilities | Compatible eBPF/TC, BTF, veth and network namespace support. Vendor restrictions can affect operation. |
 | Verified device | OnePlus 13 / PJZ110, Android 17 / SDK 37. |
 | Verified kernel | `6.6.118-android15` AGKI, SELinux Enforcing. |
-| Validated version | Module `v0.1.0-alpha5`, core `3.1.0-android-ksu.4`. |
+| Validated version | Module `v0.1.0-alpha6`, core `3.1.0-android-ksu.5`. |
 
-alpha5 fixes recovery when network state changes without a configuration change and avoids duplicate runtime reconstruction. Tests cover repeated Wi-Fi/5G transitions, interface changes with unchanged configuration, and strict TLS connectivity. Bidirectional transitions between an ordinary hotspot without an upstream proxy and 5G also recovered automatically. Cold-boot and user-confirmed Play Store homepage results were recorded on alpha4; see the validation record for alpha5-specific results and limits.
+alpha6 adds Wi-Fi blacklist/whitelist policies and an independent policy for non-Wi-Fi networks. Matching direct networks release the data plane while keeping the dashboard available; recovery respects the user’s saved runtime intent. Device tests cover list matches and misses, repeated Wi-Fi/5G transitions, manual stop and deferred start. Ordinary hotspot tests from alpha5 and cold-boot results from alpha4 remain separate; cold boot was not repeated for alpha6.
 
 Vendor restrictions prevent cgroup attachment on the verified device, so avoid `pname()` process-name routing. Validation does not cover every UDP/QUIC or IPv6 scenario, other devices, Play Store installation flows or purchases. See [validation details](android/docs/VALIDATION.md).
 
@@ -75,7 +76,7 @@ Vendor restrictions prevent cgroup attachment on the verified device, so avoid `
 
 Download the ARM64 ZIP from the [latest release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest), install it through KernelSU, then reboot.
 
-Currently validated asset: [`DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha5/DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip). Releases distribute the installation ZIP only.
+Currently validated asset: [`DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha6/DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip). Releases distribute the installation ZIP only.
 
 Stop other transparent proxy cores or VPNs before installation. The module checks for conflicting processes, but that check does not cover every possible competing proxy.
 
@@ -93,11 +94,17 @@ Packages contain no accounts, nodes or subscriptions. Initial routing is direct.
 On the verified ColorOS framework, network transitions can restrict the Play Store and Google services. Enable **Google network compatibility** in the module WebUI if needed.
 
 - Disabled by default; only manages the corresponding primary-user UIDs, without clearing accounts or application data.
-- Maintains networking policies while the proxy runtime runs and restores recorded policies when the runtime/service stops or the option is disabled.
+- Maintains networking policies while the runtime runs or Wi-Fi policy pauses a user-enabled runtime. Restores recorded policies on manual runtime stop, service stop, or disabling the option.
 - Preserves policies changed externally; failed restorations retain their journal for a later retry.
 - Requires the verified SDK and framework hash before any compatibility-policy write.
 
 This is a device compatibility option, not a general Google services installer or certification tool. See the [module documentation](android/module/README.md#google-服务联网兼容alpha4).
+
+### 4. Optional Wi-Fi policies
+
+Enable **Wi-Fi automatic switching** in the module WebUI, choose blacklist or whitelist, and enter one exact, case-sensitive SSID per line. Blacklist matches bypass the phone proxy; other Wi-Fi networks use the existing proxy rules. Whitelist mode reverses this behavior. The independent non-Wi-Fi proxy option defaults to enabled.
+
+The feature defaults to disabled with empty lists. During policy bypass, the dashboard stays available and `readiness.networkPolicyPaused` is `true`. Leaving the direct network restores the data plane only if the user had enabled the runtime. Manual stop is preserved across transitions. See the [Wi-Fi policy guide](android/docs/WIFI-POLICY.md) for details.
 
 ## Operations
 
@@ -125,6 +132,7 @@ The internal module ID remains `daenext`; renaming the repository does not chang
 | --- | --- |
 | `/data/adb/modules/daenext/` | Module programs and WebUI. |
 | `/data/adb/daenext/config/` | Database, configuration and product logs. |
+| `/data/adb/daenext/wifi-policy.json` | Persistent Wi-Fi policy, included in module backups. |
 | `/data/adb/daenext/assets/` | GeoIP / Geosite data. |
 | `/data/adb/daenext/certs/` | CA bundle generated from the system trust store. |
 | `/data/adb/daenext/logs/` | Service and startup logs. |

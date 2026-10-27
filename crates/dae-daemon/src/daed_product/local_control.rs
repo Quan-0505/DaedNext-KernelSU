@@ -24,7 +24,7 @@ impl Drop for LocalControlReloadBusyReset {
 pub(in crate::daed_product) struct ProductLocalControlRuntime {
     socket_path: PathBuf,
     accept_join: Option<thread::JoinHandle<()>>,
-    reload_sender: Option<SyncSender<UnixStream>>,
+    reload_sender: Option<SyncSender<(UnixStream, Value)>>,
     reload_join: Option<thread::JoinHandle<()>>,
 }
 
@@ -71,9 +71,9 @@ pub(in crate::daed_product) fn spawn_local_control_socket(
         .name("daed-control-reload".to_owned())
         .stack_size(PRODUCT_HTTP_LOW_MEMORY_WORKER_STACK_BYTES_DEFAULT)
         .spawn(move || {
-            while let Ok(mut stream) = reload_receiver.recv() {
+            while let Ok((mut stream, request)) = reload_receiver.recv() {
                 let _busy_reset = LocalControlReloadBusyReset(Arc::clone(&worker_reload_busy));
-                let response = handle_local_control_reload(&reload_app);
+                let response = handle_local_control_request(&reload_app, &request);
                 let _ = write_local_control_response(&mut stream, response);
             }
         })?;
@@ -141,7 +141,7 @@ fn remove_owned_local_control_socket(path: &Path) -> io::Result<()> {
 fn local_control_accept_loop(
     listener: UnixListener,
     app: Arc<AppState>,
-    reload_sender: SyncSender<UnixStream>,
+    reload_sender: SyncSender<(UnixStream, Value)>,
     reload_busy: Arc<AtomicBool>,
 ) {
     while !app.shutdown.is_requested() {
@@ -165,7 +165,7 @@ fn local_control_accept_loop(
 fn dispatch_local_control_stream(
     app: &AppState,
     mut stream: UnixStream,
-    reload_sender: &SyncSender<UnixStream>,
+    reload_sender: &SyncSender<(UnixStream, Value)>,
     reload_busy: &AtomicBool,
 ) {
     if let Err(err) = ensure_local_control_peer_is_root(&stream) {
@@ -185,7 +185,10 @@ fn dispatch_local_control_stream(
             return;
         }
     };
-    if request.get("op").and_then(Value::as_str) == Some(LOCAL_CONTROL_OP_RELOAD) {
+    if matches!(
+        request.get("op").and_then(Value::as_str),
+        Some(LOCAL_CONTROL_OP_RELOAD | "network-policy")
+    ) {
         if reload_busy
             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
             .is_err()
@@ -196,16 +199,16 @@ fn dispatch_local_control_stream(
             );
             return;
         }
-        match reload_sender.try_send(stream) {
+        match reload_sender.try_send((stream, request)) {
             Ok(()) => {}
-            Err(TrySendError::Full(mut stream)) => {
+            Err(TrySendError::Full((mut stream, _))) => {
                 reload_busy.store(false, Ordering::Release);
                 let _ = write_local_control_response(
                     &mut stream,
                     json!({"ok": false, "error": "another local-control reload is queued"}),
                 );
             }
-            Err(TrySendError::Disconnected(mut stream)) => {
+            Err(TrySendError::Disconnected((mut stream, _))) => {
                 reload_busy.store(false, Ordering::Release);
                 let _ = write_local_control_response(
                     &mut stream,
@@ -222,6 +225,18 @@ fn dispatch_local_control_stream(
 fn handle_local_control_request(app: &AppState, request: &Value) -> Value {
     match request.get("op").and_then(Value::as_str) {
         Some(LOCAL_CONTROL_OP_STATUS) => handle_local_control_status(app),
+        Some("network-policy") => {
+            let Some(direct) = request.get("direct").and_then(Value::as_bool) else {
+                return json!({"ok":false,"error":"network-policy requires a boolean direct field"});
+            };
+            match app.runtime.set_network_policy_paused(direct) {
+                Ok(()) => {
+                    json!({"ok":true,"networkPolicyPaused":app.runtime.network_policy_bypassed(),
+                    "runtimeRunning":app.runtime.is_running(),"runtimeRequired":app.runtime.runtime_required_for_readiness()})
+                }
+                Err(error) => json!({"ok":false,"error":error}),
+            }
+        }
         Some(LOCAL_CONTROL_OP_RELOAD) => handle_local_control_reload(app),
         Some(op) => {
             json!({"ok": false, "error": format!("unsupported local control operation: {op}")})
@@ -235,7 +250,10 @@ fn handle_local_control_status(app: &AppState) -> Value {
     let product_ready = app.shutdown.is_ready();
     let runtime_running = app.runtime.is_running();
     let runtime_required = app.runtime.runtime_required_for_readiness();
-    let ready = product_ready && (!runtime_required || runtime_running) && !shutting_down;
+    let policy_bypassed = app.runtime.network_policy_bypassed();
+    let ready = product_ready
+        && (!runtime_required || runtime_running || policy_bypassed)
+        && !shutting_down;
     json!({
         "ok": ready,
         "ready": ready,
@@ -243,6 +261,7 @@ fn handle_local_control_status(app: &AppState) -> Value {
         "shuttingDown": shutting_down,
         "runtimeRunning": runtime_running,
         "runtimeRequired": runtime_required,
+        "networkPolicyPaused": policy_bypassed,
         "contract": "local-control-readiness-v1",
     })
 }

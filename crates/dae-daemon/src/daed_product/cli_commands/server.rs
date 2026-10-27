@@ -35,7 +35,7 @@ pub(crate) fn run_product_server_command(args: &[String], _version: &str) -> Dae
     let runtime_required_for_readiness =
         should_restore_runtime_on_start(&options.state).unwrap_or(false);
     runtime.set_runtime_required_for_readiness(runtime_required_for_readiness);
-    if runtime_required_for_readiness {
+    if runtime_required_for_readiness && !runtime.network_policy_paused() {
         match restore_runtime_from_state(
             &runtime,
             &options.state,

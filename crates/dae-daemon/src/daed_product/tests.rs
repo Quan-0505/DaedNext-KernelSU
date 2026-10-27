@@ -51,3 +51,6 @@ mod subscription_fetch_failures;
 mod subscription_source_races;
 #[cfg(test)]
 mod subscription_transactions;
+
+#[cfg(test)]
+mod wifi_policy;

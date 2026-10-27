@@ -7,6 +7,7 @@ DAEMON="$MODDIR/bin/daed"
 export LD_LIBRARY_PATH="$MODDIR/lib"
 export DAE_LOCATION_ASSET="$STATE/assets"
 export DAE_RUNTIME_DIR="$RUN"
+export DAE_NETWORK_POLICY_STATE="$RUN/wifi-policy-state.json"
 export DAE_ALLOW_EMPTY_LAN=1
 export NETNS_LINK=veth
 export SSL_CERT_FILE="$STATE/certs/ca-certificates.crt"
@@ -19,6 +20,8 @@ init_state() {
  "$BB" mkdir -p "$CONFIG" "$RUN" "$STATE/logs" "$STATE/backups" "$STATE/assets" "$STATE/certs"
  "$BB" chmod 700 "$STATE" "$CONFIG" "$RUN" "$STATE/backups"
  [ -f "$CONFIG/daed.db" ] || "$BB" cp "$MODDIR/defaults/daed.db" "$CONFIG/daed.db"
+ [ -f "$STATE/wifi-policy.json" ] || "$BB" cp "$MODDIR/defaults/wifi-policy.json" "$STATE/wifi-policy.json"
+ "$BB" chmod 600 "$STATE/wifi-policy.json"
  [ -f "$CONFIG/config.dae" ] || "$BB" cp "$MODDIR/defaults/config.dae" "$CONFIG/config.dae"
  for asset in geoip.dat geosite.dat; do
   [ -f "$STATE/assets/$asset" ] || "$BB" cp "$MODDIR/assets/$asset" "$STATE/assets/$asset"

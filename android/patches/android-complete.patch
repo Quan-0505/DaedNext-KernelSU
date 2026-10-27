@@ -13,11 +13,199 @@ index c30990aa..e41721da 100644
          if !features.is_empty() {
              command.arg("--features").arg(features.join(","));
          }
+diff --git a/crates/dae-daemon/src/daed_product.rs b/crates/dae-daemon/src/daed_product.rs
+index fe5db534..930cd595 100644
+--- a/crates/dae-daemon/src/daed_product.rs
++++ b/crates/dae-daemon/src/daed_product.rs
+@@ -401,6 +401,7 @@ use self::http_server::*;
+ mod sse_runtime;
+ use self::sse_runtime::*;
+ mod local_control;
++mod wifi_policy;
+ use self::local_control::*;
+ mod api_routes;
+ use self::api_routes::*;
+diff --git a/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs b/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs
+index 32eb3628..c1edabf5 100644
+--- a/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs
++++ b/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs
+@@ -16,6 +16,7 @@ pub fn run_daed_product_with_args_and_version(
+         Some("state") => run_state_command(&args[1..]),
+         Some("run") => run_product_server_command(&args[1..], version),
+         Some("reload") => run_local_control_reload_command(&args[1..]),
++        Some("wifi-policy") => wifi_policy::run_command(&args[1..]),
+         Some("wait-ready") => run_local_control_wait_ready_command(&args[1..]),
+         Some("export") => run_export_command(&args[1..]),
+         Some("resetpass") => run_resetpass_command(&args[1..]),
+diff --git a/crates/dae-daemon/src/daed_product/cli_commands/server.rs b/crates/dae-daemon/src/daed_product/cli_commands/server.rs
+index d758c61e..fcc3a94d 100644
+--- a/crates/dae-daemon/src/daed_product/cli_commands/server.rs
++++ b/crates/dae-daemon/src/daed_product/cli_commands/server.rs
+@@ -35,7 +35,7 @@ pub(crate) fn run_product_server_command(args: &[String], _version: &str) -> Dae
+     let runtime_required_for_readiness =
+         should_restore_runtime_on_start(&options.state).unwrap_or(false);
+     runtime.set_runtime_required_for_readiness(runtime_required_for_readiness);
+-    if runtime_required_for_readiness {
++    if runtime_required_for_readiness && !runtime.network_policy_paused() {
+         match restore_runtime_from_state(
+             &runtime,
+             &options.state,
+diff --git a/crates/dae-daemon/src/daed_product/local_control.rs b/crates/dae-daemon/src/daed_product/local_control.rs
+index 737e243b..25d7df5d 100644
+--- a/crates/dae-daemon/src/daed_product/local_control.rs
++++ b/crates/dae-daemon/src/daed_product/local_control.rs
+@@ -24,7 +24,7 @@ impl Drop for LocalControlReloadBusyReset {
+ pub(in crate::daed_product) struct ProductLocalControlRuntime {
+     socket_path: PathBuf,
+     accept_join: Option<thread::JoinHandle<()>>,
+-    reload_sender: Option<SyncSender<UnixStream>>,
++    reload_sender: Option<SyncSender<(UnixStream, Value)>>,
+     reload_join: Option<thread::JoinHandle<()>>,
+ }
+ 
+@@ -71,9 +71,9 @@ pub(in crate::daed_product) fn spawn_local_control_socket(
+         .name("daed-control-reload".to_owned())
+         .stack_size(PRODUCT_HTTP_LOW_MEMORY_WORKER_STACK_BYTES_DEFAULT)
+         .spawn(move || {
+-            while let Ok(mut stream) = reload_receiver.recv() {
++            while let Ok((mut stream, request)) = reload_receiver.recv() {
+                 let _busy_reset = LocalControlReloadBusyReset(Arc::clone(&worker_reload_busy));
+-                let response = handle_local_control_reload(&reload_app);
++                let response = handle_local_control_request(&reload_app, &request);
+                 let _ = write_local_control_response(&mut stream, response);
+             }
+         })?;
+@@ -141,7 +141,7 @@ fn remove_owned_local_control_socket(path: &Path) -> io::Result<()> {
+ fn local_control_accept_loop(
+     listener: UnixListener,
+     app: Arc<AppState>,
+-    reload_sender: SyncSender<UnixStream>,
++    reload_sender: SyncSender<(UnixStream, Value)>,
+     reload_busy: Arc<AtomicBool>,
+ ) {
+     while !app.shutdown.is_requested() {
+@@ -165,7 +165,7 @@ fn local_control_accept_loop(
+ fn dispatch_local_control_stream(
+     app: &AppState,
+     mut stream: UnixStream,
+-    reload_sender: &SyncSender<UnixStream>,
++    reload_sender: &SyncSender<(UnixStream, Value)>,
+     reload_busy: &AtomicBool,
+ ) {
+     if let Err(err) = ensure_local_control_peer_is_root(&stream) {
+@@ -185,7 +185,10 @@ fn dispatch_local_control_stream(
+             return;
+         }
+     };
+-    if request.get("op").and_then(Value::as_str) == Some(LOCAL_CONTROL_OP_RELOAD) {
++    if matches!(
++        request.get("op").and_then(Value::as_str),
++        Some(LOCAL_CONTROL_OP_RELOAD | "network-policy")
++    ) {
+         if reload_busy
+             .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+             .is_err()
+@@ -196,16 +199,16 @@ fn dispatch_local_control_stream(
+             );
+             return;
+         }
+-        match reload_sender.try_send(stream) {
++        match reload_sender.try_send((stream, request)) {
+             Ok(()) => {}
+-            Err(TrySendError::Full(mut stream)) => {
++            Err(TrySendError::Full((mut stream, _))) => {
+                 reload_busy.store(false, Ordering::Release);
+                 let _ = write_local_control_response(
+                     &mut stream,
+                     json!({"ok": false, "error": "another local-control reload is queued"}),
+                 );
+             }
+-            Err(TrySendError::Disconnected(mut stream)) => {
++            Err(TrySendError::Disconnected((mut stream, _))) => {
+                 reload_busy.store(false, Ordering::Release);
+                 let _ = write_local_control_response(
+                     &mut stream,
+@@ -222,6 +225,18 @@ fn dispatch_local_control_stream(
+ fn handle_local_control_request(app: &AppState, request: &Value) -> Value {
+     match request.get("op").and_then(Value::as_str) {
+         Some(LOCAL_CONTROL_OP_STATUS) => handle_local_control_status(app),
++        Some("network-policy") => {
++            let Some(direct) = request.get("direct").and_then(Value::as_bool) else {
++                return json!({"ok":false,"error":"network-policy requires a boolean direct field"});
++            };
++            match app.runtime.set_network_policy_paused(direct) {
++                Ok(()) => {
++                    json!({"ok":true,"networkPolicyPaused":app.runtime.network_policy_bypassed(),
++                    "runtimeRunning":app.runtime.is_running(),"runtimeRequired":app.runtime.runtime_required_for_readiness()})
++                }
++                Err(error) => json!({"ok":false,"error":error}),
++            }
++        }
+         Some(LOCAL_CONTROL_OP_RELOAD) => handle_local_control_reload(app),
+         Some(op) => {
+             json!({"ok": false, "error": format!("unsupported local control operation: {op}")})
+@@ -235,7 +250,10 @@ fn handle_local_control_status(app: &AppState) -> Value {
+     let product_ready = app.shutdown.is_ready();
+     let runtime_running = app.runtime.is_running();
+     let runtime_required = app.runtime.runtime_required_for_readiness();
+-    let ready = product_ready && (!runtime_required || runtime_running) && !shutting_down;
++    let policy_bypassed = app.runtime.network_policy_bypassed();
++    let ready = product_ready
++        && (!runtime_required || runtime_running || policy_bypassed)
++        && !shutting_down;
+     json!({
+         "ok": ready,
+         "ready": ready,
+@@ -243,6 +261,7 @@ fn handle_local_control_status(app: &AppState) -> Value {
+         "shuttingDown": shutting_down,
+         "runtimeRunning": runtime_running,
+         "runtimeRequired": runtime_required,
++        "networkPolicyPaused": policy_bypassed,
+         "contract": "local-control-readiness-v1",
+     })
+ }
 diff --git a/crates/dae-daemon/src/daed_product/runtime_manager.rs b/crates/dae-daemon/src/daed_product/runtime_manager.rs
-index 28896c6f..a02056cf 100644
+index 28896c6f..60443fb6 100644
 --- a/crates/dae-daemon/src/daed_product/runtime_manager.rs
 +++ b/crates/dae-daemon/src/daed_product/runtime_manager.rs
-@@ -461,7 +461,13 @@ fn reload_prepared_product_runtime_with_config_content(
+@@ -354,6 +354,9 @@ impl ProductRuntimeManager {
+     fn new_with_state(state: Option<PathBuf>) -> Self {
+         let coordinator = RuntimeApplyCoordinator::new();
+         let domain = ProductRuntimeDomain::new(coordinator.clone());
++        if let Ok(mut inner) = domain.state().lock() {
++            inner.network_policy_paused = wifi_policy::initial_direct_requested();
++        }
+         let interface_recovery = ProductRuntimeInterfaceRecoverySupervisor::start(
+             coordinator.clone(),
+             domain.lifecycle().clone(),
+@@ -457,11 +460,40 @@ fn reload_prepared_product_runtime_with_config_content(
+ ) -> Result<RuntimeStartOutcome, String> {
+     let config = Arc::clone(prepared.config());
+     let desired_identity = prepared.transition_identity();
++    if inner
++        .lock()
++        .map_err(|_| "runtime policy lock poisoned")?
++        .network_policy_paused
++    {
++        let _lifecycle = lifecycle
++            .lock()
++            .map_err(|_| "runtime lifecycle lock poisoned")?;
++        let mut state = inner.lock().map_err(|_| "runtime policy lock poisoned")?;
++        if !state.network_policy_paused || state.runtime.is_some() {
++            return Err(
++                "network policy changed while preparing bypass configuration; retry".into(),
++            );
++        }
++        state.config = Some(config);
++        state.config_content = config_content;
++        state.transition_identity = desired_identity;
++        let report = json!({"status":"pass", "source":source,
++            "transition":"NetworkPolicyBypass", "networkPolicyPaused":true,
++            "runtimeStarted":false});
++        state.last_report = Some(Arc::new(report.clone()));
++        return Ok(RuntimeStartOutcome { report });
++    }
+     let transition = {
          let state = inner
              .lock()
              .map_err(|_| "product runtime manager lock poisoned".to_owned())?;
@@ -31,7 +219,7 @@ index 28896c6f..a02056cf 100644
              (Some(_), Some(active)) => classify_runtime_transition(
                  active,
                  state.transition_identity,
-@@ -508,6 +514,20 @@ fn reload_prepared_product_runtime_with_config_content(
+@@ -508,6 +540,20 @@ fn reload_prepared_product_runtime_with_config_content(
      }
  }
  
@@ -52,27 +240,41 @@ index 28896c6f..a02056cf 100644
  fn process_baseline_after_physical_start(
      previous: Option<&Config>,
      desired: &Config,
-@@ -726,8 +746,9 @@ fn replace_prepared_product_runtime_with_config_content(
+@@ -726,8 +772,10 @@ fn replace_prepared_product_runtime_with_config_content(
          .restore_cache
          .then(|| previous_dns_reload_snapshot.clone())
          .flatten();
 -    let latency_seed =
 -        runtime_health_seed_snapshots(latency_seed.iter().cloned().chain(live_latency_seed));
 +    let latency_seed = replacement_health_seed_snapshots(
-+        source, latency_seed.iter().cloned().chain(live_latency_seed),
++        source,
++        latency_seed.iter().cloned().chain(live_latency_seed),
 +    );
      let previous_cleanup_report = if previous_runtime_was_running {
          cleanup_replacement_before_start(inner, lifecycle_epoch, previous_runtime)?
      } else {
-@@ -746,6 +767,8 @@ fn replace_prepared_product_runtime_with_config_content(
+@@ -746,6 +794,10 @@ fn replace_prepared_product_runtime_with_config_content(
          Ok((runtime, mut report)) => {
              if let Value::Object(report) = &mut report {
                  report.insert("transition".to_owned(), json!(transition.name()));
-+                report.insert("networkHealthSeedDiscarded".to_owned(),
-+                    json!(source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE));
++                report.insert(
++                    "networkHealthSeedDiscarded".to_owned(),
++                    json!(source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE),
++                );
                  report.insert(
                      "previousRuntimeCleanup".to_owned(),
                      previous_cleanup_report.clone().unwrap_or(Value::Null),
+@@ -955,6 +1007,10 @@ impl ProductRuntimeManager {
+         }
+         let mut rendered = snapshot.render();
+         if let Value::Object(object) = &mut rendered {
++            object.insert(
++                "networkPolicyPaused".to_owned(),
++                json!(self.network_policy_paused()),
++            );
+             object.insert("pprof".to_owned(), self.pprof_runtime.status());
+         }
+         rendered
 diff --git a/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs b/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs
 index 03657f60..ce346331 100644
 --- a/crates/dae-daemon/src/daed_product/runtime_manager/recovery.rs
@@ -192,7 +394,7 @@ index 03657f60..ce346331 100644
          ResidentInterfaceRecoveryRequest {
              lifecycle_epoch: 7,
 diff --git a/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs b/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs
-index 59417aa3..3d7f1fc8 100644
+index 59417aa3..704b5a57 100644
 --- a/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs
 +++ b/crates/dae-daemon/src/daed_product/runtime_manager/startup_recovery.rs
 @@ -39,7 +39,7 @@ impl ProductRuntimeStartupRecoverySupervisor {
@@ -204,7 +406,7 @@ index 59417aa3..3d7f1fc8 100644
                          && should_restore_runtime_on_start(&state).unwrap_or(false)
                      {
                          let result = restore_runtime_from_state(
-@@ -86,6 +86,19 @@ fn sleep_startup_recovery_poll(stop: &AtomicBool) {
+@@ -86,6 +86,21 @@ fn sleep_startup_recovery_poll(stop: &AtomicBool) {
  }
  
  impl ProductRuntimeManager {
@@ -217,14 +419,16 @@ index 59417aa3..3d7f1fc8 100644
 +        }
 +        self.inner()
 +            .lock()
-+            .map(|state| state.runtime.is_none() && !state.cleanup.running)
++            .map(|state| {
++                state.runtime.is_none() && !state.cleanup.running && !state.network_policy_paused
++            })
 +            .unwrap_or(false)
 +    }
 +
      pub(in crate::daed_product) fn start_startup_recovery(
          self: &Arc<Self>,
          state: PathBuf,
-@@ -105,3 +118,34 @@ impl ProductRuntimeManager {
+@@ -105,3 +120,34 @@ impl ProductRuntimeManager {
          Ok(())
      }
  }
@@ -257,6 +461,575 @@ index 59417aa3..3d7f1fc8 100644
 +            .cleanup
 +            .begin(1, "reload-replace");
 +        assert!(!runtime.startup_restore_needed());
++    }
++}
+diff --git a/crates/dae-daemon/src/daed_product/runtime_manager/stop.rs b/crates/dae-daemon/src/daed_product/runtime_manager/stop.rs
+index 6a755a05..835e41c0 100644
+--- a/crates/dae-daemon/src/daed_product/runtime_manager/stop.rs
++++ b/crates/dae-daemon/src/daed_product/runtime_manager/stop.rs
+@@ -12,6 +12,49 @@ pub(in crate::daed_product) struct PreparedProductRuntimeStop<'a> {
+ }
+ 
+ impl ProductRuntimeManager {
++    pub(in crate::daed_product) fn network_policy_paused(&self) -> bool {
++        self.inner()
++            .lock()
++            .map(|s| s.network_policy_paused)
++            .unwrap_or(false)
++    }
++
++    pub(in crate::daed_product) fn network_policy_bypassed(&self) -> bool {
++        self.inner()
++            .lock()
++            .map(|s| s.network_policy_paused && s.runtime.is_none() && !s.cleanup.running)
++            .unwrap_or(false)
++    }
++
++    pub(in crate::daed_product) fn set_network_policy_paused(
++        &self,
++        direct: bool,
++    ) -> Result<(), String> {
++        {
++            let state = self
++                .inner()
++                .lock()
++                .map_err(|_| "runtime policy lock poisoned")?;
++            if state.network_policy_paused == direct && (!direct || state.runtime.is_none()) {
++                return Ok(());
++            }
++        }
++        if direct {
++            // Serialize with manual start/stop and cancel stale preparation. Do
++            // not persist a user stop: the saved running intent must survive.
++            let mut stop = self.prepare_stop()?;
++            stop.inner.network_policy_paused = true;
++            stop.commit_and_wait("wifi-policy-bypass")?;
++        } else {
++            self.inner()
++                .lock()
++                .map_err(|_| "runtime policy lock poisoned")?
++                .network_policy_paused = false;
++            // Startup recovery restores only when the saved user intent is on.
++        }
++        Ok(())
++    }
++
+     pub(in crate::daed_product) fn prepare_stop(
+         &self,
+     ) -> Result<PreparedProductRuntimeStop<'_>, String> {
+diff --git a/crates/dae-daemon/src/daed_product/tests.rs b/crates/dae-daemon/src/daed_product/tests.rs
+index bee9de52..ec2caeef 100644
+--- a/crates/dae-daemon/src/daed_product/tests.rs
++++ b/crates/dae-daemon/src/daed_product/tests.rs
+@@ -51,3 +51,6 @@ mod subscription_fetch_failures;
+ mod subscription_source_races;
+ #[cfg(test)]
+ mod subscription_transactions;
++
++#[cfg(test)]
++mod wifi_policy;
+diff --git a/crates/dae-daemon/src/daed_product/tests/local_control.rs b/crates/dae-daemon/src/daed_product/tests/local_control.rs
+index 8ae0c6f0..3b17b0a9 100644
+--- a/crates/dae-daemon/src/daed_product/tests/local_control.rs
++++ b/crates/dae-daemon/src/daed_product/tests/local_control.rs
+@@ -79,6 +79,14 @@ fn local_control_reload_uses_live_runtime_state() {
+         json!("runtime is required but not running")
+     );
+ 
++    app.runtime.set_network_policy_paused(true).unwrap();
++    let bypass = handle_local_control_status(&app);
++    assert_eq!(bypass["ready"], true);
++    assert_eq!(bypass["networkPolicyPaused"], true);
++    assert_eq!(bypass["runtimeRunning"], false);
++    assert_eq!(bypass["runtimeRequired"], true);
++    app.runtime.set_network_policy_paused(false).unwrap();
++
+     app.runtime.set_runtime_required_for_readiness(false);
+     let response = handle_local_control_reload(&app);
+     assert_eq!(response["ok"], json!(true));
+diff --git a/crates/dae-daemon/src/daed_product/tests/wifi_policy.rs b/crates/dae-daemon/src/daed_product/tests/wifi_policy.rs
+new file mode 100644
+index 00000000..20d3d273
+--- /dev/null
++++ b/crates/dae-daemon/src/daed_product/tests/wifi_policy.rs
+@@ -0,0 +1,88 @@
++use super::support::FreshProductState;
++use super::*;
++
++fn apply(runtime: &ProductRuntimeManager, fixture: &FreshProductState) -> Value {
++    let prepared = prepare_runtime_reload_config(fixture.state()).unwrap();
++    apply_prepared_runtime_reload(
++        runtime,
++        fixture.state(),
++        Some(fixture.root()),
++        "wifi-policy-test",
++        prepared,
++        &[],
++    )
++    .unwrap()
++    .runtime_report
++}
++
++#[test]
++fn wifi_policy_pause_keeps_user_running_intent_and_resume_restores_same_configuration() {
++    with_product_runtime_fake_start_override(true, || {
++        let fixture = FreshProductState::new("wifi-pause-resume");
++        fixture.seed_selected_resources();
++        let runtime = ProductRuntimeManager::new();
++        apply(&runtime, &fixture);
++        let global: String = fixture
++            .connection()
++            .query_row("SELECT global FROM configs WHERE selected=1", [], |r| {
++                r.get(0)
++            })
++            .unwrap();
++        runtime.set_network_policy_paused(true).unwrap();
++        assert!(!runtime.is_running());
++        assert!(runtime.network_policy_bypassed());
++        assert!(runtime.runtime_required_for_readiness());
++        assert!(should_restore_runtime_on_start(fixture.state()).unwrap());
++        assert_eq!(
++            apply(&runtime, &fixture)["transition"],
++            "NetworkPolicyBypass"
++        );
++        assert!(!runtime.is_running());
++        runtime.set_network_policy_paused(false).unwrap();
++        apply(&runtime, &fixture);
++        assert!(runtime.is_running());
++        assert!(!runtime.network_policy_paused());
++        assert_eq!(
++            fixture
++                .connection()
++                .query_row("SELECT global FROM configs WHERE selected=1", [], |r| {
++                    r.get::<_, String>(0)
++                })
++                .unwrap(),
++            global
++        );
++    });
++}
++
++#[test]
++fn wifi_policy_manual_stop_in_bypass_prevents_automatic_resume() {
++    with_product_runtime_fake_start_override(true, || {
++        let fixture = FreshProductState::new("wifi-manual-stop");
++        fixture.seed_selected_resources();
++        let runtime = ProductRuntimeManager::new();
++        apply(&runtime, &fixture);
++        runtime.set_network_policy_paused(true).unwrap();
++        stop_runtime_and_persist(fixture.state(), &runtime).unwrap();
++        runtime.set_network_policy_paused(false).unwrap();
++        assert!(!runtime.is_running());
++        assert!(!runtime.runtime_required_for_readiness());
++        assert!(!should_restore_runtime_on_start(fixture.state()).unwrap());
++    });
++}
++
++#[test]
++fn wifi_policy_manual_start_while_bypassed_saves_intent_without_attaching() {
++    with_product_runtime_fake_start_override(true, || {
++        let fixture = FreshProductState::new("wifi-deferred-start");
++        fixture.seed_selected_resources();
++        let runtime = ProductRuntimeManager::new();
++        runtime.set_network_policy_paused(true).unwrap();
++        apply(&runtime, &fixture);
++        assert!(!runtime.is_running());
++        assert!(runtime.runtime_required_for_readiness());
++        assert!(should_restore_runtime_on_start(fixture.state()).unwrap());
++        runtime.set_network_policy_paused(false).unwrap();
++        apply(&runtime, &fixture);
++        assert!(runtime.is_running());
++    });
++}
+diff --git a/crates/dae-daemon/src/daed_product/wifi_policy.rs b/crates/dae-daemon/src/daed_product/wifi_policy.rs
+new file mode 100644
+index 00000000..f97e99dc
+--- /dev/null
++++ b/crates/dae-daemon/src/daed_product/wifi_policy.rs
+@@ -0,0 +1,385 @@
++//! Android module Wi-Fi policy. SSIDs are data, never shell source.
++use super::*;
++use base64::Engine;
++use serde::{Deserialize, Serialize};
++use std::os::unix::fs::OpenOptionsExt;
++
++const MAX_CONFIG_BYTES: usize = 16 * 1024;
++const DEFAULT_CONFIG: &str = "/data/adb/daenext/wifi-policy.json";
++const DEFAULT_STATE: &str = "/data/adb/daenext/run/wifi-policy-state.json";
++
++#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
++#[serde(rename_all = "lowercase")]
++enum ListMode {
++    #[default]
++    Blacklist,
++    Whitelist,
++}
++
++#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
++#[serde(default, deny_unknown_fields)]
++struct WifiConfig {
++    enabled: bool,
++    mode: ListMode,
++    blacklist: Vec<String>,
++    whitelist: Vec<String>,
++    proxy_on_non_wifi: bool,
++}
++impl Default for WifiConfig {
++    fn default() -> Self {
++        Self {
++            enabled: false,
++            mode: ListMode::Blacklist,
++            blacklist: vec![],
++            whitelist: vec![],
++            proxy_on_non_wifi: true,
++        }
++    }
++}
++impl WifiConfig {
++    fn validate(&mut self) -> Result<(), String> {
++        for names in [&mut self.blacklist, &mut self.whitelist] {
++            if names.len() > 128 {
++                return Err("A Wi-Fi list supports at most 128 SSIDs".into());
++            }
++            if names
++                .iter()
++                .any(|n| n.is_empty() || n.len() > 32 || n.chars().any(char::is_control))
++            {
++                return Err(
++                    "Each SSID must contain 1-32 UTF-8 bytes without control characters".into(),
++                );
++            }
++            let mut seen = HashSet::new();
++            names.retain(|name| seen.insert(name.clone()));
++        }
++        Ok(())
++    }
++}
++
++#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
++struct WifiDecision {
++    enabled: bool,
++    mode: ListMode,
++    direct: bool,
++    network: String,
++    interface: Option<String>,
++    ssid: Option<String>,
++    reason: String,
++}
++
++fn decide(config: &WifiConfig, interface: Option<String>, ssid: Option<String>) -> WifiDecision {
++    let is_wifi = interface.as_deref().is_some_and(|i| i.starts_with("wlan"));
++    let network = if interface.is_none() {
++        "unavailable"
++    } else if is_wifi {
++        "wifi"
++    } else {
++        "non-wifi"
++    };
++    let ssid = if is_wifi { ssid } else { None };
++    let (direct, reason) = if !config.enabled {
++        (false, "disabled")
++    } else if interface.is_none() {
++        (false, "waiting-for-network")
++    } else if !is_wifi {
++        (
++            !config.proxy_on_non_wifi,
++            if config.proxy_on_non_wifi {
++                "non-wifi-proxy"
++            } else {
++                "non-wifi-direct"
++            },
++        )
++    } else if let Some(name) = ssid.as_ref() {
++        match config.mode {
++            ListMode::Blacklist if config.blacklist.contains(name) => (true, "blacklist-match"),
++            ListMode::Blacklist => (false, "blacklist-miss"),
++            ListMode::Whitelist if config.whitelist.contains(name) => (false, "whitelist-match"),
++            ListMode::Whitelist => (true, "whitelist-miss"),
++        }
++    } else {
++        (false, "ssid-unavailable")
++    };
++    WifiDecision {
++        enabled: config.enabled,
++        mode: config.mode,
++        direct,
++        network: network.into(),
++        interface,
++        ssid,
++        reason: reason.into(),
++    }
++}
++
++fn parse_ssid(status: &str) -> Option<String> {
++    status.lines().find_map(|line| {
++        let name = line
++            .trim()
++            .strip_prefix("Wifi is connected to \"")?
++            .strip_suffix('"')?;
++        (!name.is_empty() && name != "<unknown ssid>").then(|| name.to_owned())
++    })
++}
++fn parse_interface(route: &str) -> Option<String> {
++    let fields: Vec<_> = route.split_whitespace().collect();
++    fields
++        .windows(2)
++        .find(|w| w[0] == "dev")
++        .map(|w| w[1])
++        .filter(|n| !matches!(*n, "lo" | "dummy0" | "dae0"))
++        .map(str::to_owned)
++}
++fn observe(config: &WifiConfig) -> WifiDecision {
++    let mut interface = None;
++    for (family, destination) in [("-4", "1.1.1.1"), ("-6", "2606:4700:4700::1111")] {
++        if let Ok(out) = Command::new("/system/bin/ip")
++            .args([family, "route", "get", destination])
++            .output()
++            && out.status.success()
++        {
++            interface = parse_interface(&String::from_utf8_lossy(&out.stdout));
++            if interface.is_some() {
++                break;
++            }
++        }
++    }
++    let ssid = if config.enabled && interface.as_deref().is_some_and(|i| i.starts_with("wlan")) {
++        Command::new("/system/bin/cmd")
++            .args(["wifi", "status"])
++            .output()
++            .ok()
++            .filter(|o| o.status.success())
++            .and_then(|o| parse_ssid(&String::from_utf8_lossy(&o.stdout)))
++    } else {
++        None
++    };
++    decide(config, interface, ssid)
++}
++fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
++    let bytes = fs::read(path).map_err(|e| e.to_string())?;
++    if bytes.len() > MAX_CONFIG_BYTES {
++        return Err("Wi-Fi policy file exceeds 16 KiB".into());
++    }
++    serde_json::from_slice(&bytes).map_err(|e| e.to_string())
++}
++fn load_config(path: &Path) -> Result<WifiConfig, String> {
++    let mut config = if path.exists() {
++        read_json(path)?
++    } else {
++        WifiConfig::default()
++    };
++    config.validate()?;
++    Ok(config)
++}
++fn write_json<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
++    if let Some(parent) = path.parent() {
++        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
++    }
++    let tmp = path.with_extension(format!("tmp-{}", std::process::id()));
++    let result = (|| {
++        let mut file = fs::OpenOptions::new()
++            .write(true)
++            .create_new(true)
++            .mode(0o600)
++            .open(&tmp)
++            .map_err(|e| e.to_string())?;
++        serde_json::to_writer(&mut file, value).map_err(|e| e.to_string())?;
++        file.write_all(b"\n").map_err(|e| e.to_string())?;
++        file.sync_all().map_err(|e| e.to_string())?;
++        fs::rename(&tmp, path).map_err(|e| e.to_string())
++    })();
++    if result.is_err() {
++        let _ = fs::remove_file(&tmp);
++    }
++    result
++}
++
++pub(super) fn initial_direct_requested() -> bool {
++    std::env::var_os("DAE_NETWORK_POLICY_STATE")
++        .and_then(|p| read_json::<WifiDecision>(Path::new(&p)).ok())
++        .is_some_and(|d| d.enabled && d.direct)
++}
++
++#[derive(Serialize, Deserialize)]
++struct Observation {
++    decision: WifiDecision,
++    count: u32,
++}
++
++pub(super) fn run_command(args: &[String]) -> DaedProductOutput {
++    match run(args) {
++        Ok(value) => DaedProductOutput::ok(format!("{value}\n")),
++        Err(error) => DaedProductOutput::error(error),
++    }
++}
++fn run(args: &[String]) -> Result<Value, String> {
++    let action = args.first().map(String::as_str).unwrap_or("get");
++    let mut config_path = PathBuf::from(DEFAULT_CONFIG);
++    let mut state_path = PathBuf::from(DEFAULT_STATE);
++    let mut control = PathBuf::from(DEFAULT_CONTROL_SOCKET);
++    let mut data = None;
++    let mut index = 1;
++    while index < args.len() {
++        let key = &args[index];
++        let value = args.get(index + 1).ok_or("Missing Wi-Fi policy argument")?;
++        match key.as_str() {
++            "--config" => config_path = value.into(),
++            "--state" => state_path = value.into(),
++            "--control" => control = value.into(),
++            "--data" => data = Some(value.as_str()),
++            _ => return Err(format!("Unknown Wi-Fi policy argument: {key}")),
++        }
++        index += 2;
++    }
++    if action == "set" {
++        if unsafe { libc::geteuid() } != 0 {
++            return Err("Root is required".into());
++        }
++        let bytes = base64::engine::general_purpose::STANDARD
++            .decode(data.ok_or("Missing base64 configuration")?)
++            .map_err(|_| "Invalid base64 configuration")?;
++        if bytes.len() > MAX_CONFIG_BYTES {
++            return Err("Wi-Fi configuration exceeds 16 KiB".into());
++        }
++        let mut config: WifiConfig = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
++        config.validate()?;
++        write_json(&config_path, &config)?;
++        return Ok(json!({"ok":true,"config":config}));
++    }
++    let config = load_config(&config_path)?;
++    let previous = read_json::<WifiDecision>(&state_path).ok();
++    if action == "get" {
++        let mut observing = config.clone();
++        observing.enabled = true;
++        let current = observe(&observing);
++        return Ok(json!({"config":config,"status":previous,"current":current}));
++    }
++    if action == "status" {
++        return Ok(serde_json::to_value(previous).map_err(|e| e.to_string())?);
++    }
++    if !matches!(action, "init" | "sync") {
++        return Err("Usage: daed wifi-policy {get|set|status|init|sync} [--config PATH --state PATH --control PATH --data BASE64]".into());
++    }
++    if unsafe { libc::geteuid() } != 0 {
++        return Err("Root is required".into());
++    }
++    let decision = observe(&config);
++    if action == "init" {
++        write_json(&state_path, &decision)?;
++        return Ok(json!({"ok":true,"decision":decision}));
++    }
++    // Two consecutive observations avoid reacting to a stale SSID during a
++    // default-route transition. An unchanged decision remains idempotent.
++    let observation_path = state_path.with_extension("observation.json");
++    let old: Option<Observation> = read_json(&observation_path).ok();
++    let count = old
++        .as_ref()
++        .filter(|o| o.decision == decision)
++        .map_or(1, |o| o.count.saturating_add(1).min(2));
++    if old
++        .as_ref()
++        .is_none_or(|o| o.decision != decision || o.count != count)
++    {
++        write_json(
++            &observation_path,
++            &Observation {
++                decision: decision.clone(),
++                count,
++            },
++        )?;
++    }
++    if count < 2 && previous.as_ref() != Some(&decision) {
++        return Ok(json!({"ok":true,"pending":true}));
++    }
++    let response =
++        dae_product_control::request_local_control_network_policy(&control, decision.direct)
++            .map_err(|e| e.to_string())?;
++    if response["ok"] != true {
++        return Err(response["error"]
++            .as_str()
++            .unwrap_or("Wi-Fi policy apply failed")
++            .into());
++    }
++    if previous.as_ref() != Some(&decision) {
++        write_json(&state_path, &decision)?;
++    }
++    Ok(json!({"ok":true,"decision":decision,"runtime":response}))
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    fn config(mode: ListMode) -> WifiConfig {
++        WifiConfig {
++            enabled: true,
++            mode,
++            blacklist: vec!["Managed WiFi".into()],
++            whitelist: vec!["Ordinary WiFi".into()],
++            ..Default::default()
++        }
++    }
++    fn wifi(c: &WifiConfig, ssid: &str) -> WifiDecision {
++        decide(c, Some("wlan0".into()), Some(ssid.into()))
++    }
++    #[test]
++    fn wifi_blacklist_bypasses_only_matching_wifi_and_recovers_on_cellular() {
++        let c = config(ListMode::Blacklist);
++        assert!(wifi(&c, "Managed WiFi").direct);
++        assert!(!wifi(&c, "Ordinary WiFi").direct);
++        assert!(!decide(&c, Some("rmnet_data4".into()), Some("Managed WiFi".into())).direct);
++    }
++    #[test]
++    fn wifi_whitelist_proxies_only_matching_wifi_with_independent_cellular_setting() {
++        let mut c = config(ListMode::Whitelist);
++        assert!(!wifi(&c, "Ordinary WiFi").direct);
++        assert!(wifi(&c, "Managed WiFi").direct);
++        assert!(!decide(&c, Some("rmnet_data4".into()), None).direct);
++        c.proxy_on_non_wifi = false;
++        assert!(decide(&c, Some("rmnet_data4".into()), None).direct);
++    }
++    #[test]
++    fn wifi_unknown_ssid_and_route_gaps_do_not_create_unintended_bypass() {
++        for mode in [ListMode::Blacklist, ListMode::Whitelist] {
++            let c = config(mode);
++            assert!(!decide(&c, Some("wlan0".into()), None).direct);
++            assert!(!decide(&c, None, Some("Managed WiFi".into())).direct);
++        }
++        assert!(!wifi(&WifiConfig::default(), "Managed WiFi").direct);
++    }
++    #[test]
++    fn wifi_ssids_match_exactly_and_preserve_unicode_spaces_quotes_and_punctuation() {
++        let name = " 家里,\"WiFi\" ";
++        assert_eq!(
++            parse_ssid(&format!("Wifi is connected to \"{name}\"\n")),
++            Some(name.into())
++        );
++        let mut c = config(ListMode::Blacklist);
++        c.blacklist = vec![name.into()];
++        assert!(wifi(&c, name).direct);
++        assert!(!wifi(&c, name.trim()).direct);
++        assert!(!wifi(&c, " 家里,\"wifi\" ").direct);
++        assert_eq!(parse_ssid("Wifi is connected to \"<unknown ssid>\""), None);
++    }
++    #[test]
++    fn wifi_configuration_validation_rejects_injection_delimiters_and_preserves_duplicates_safely()
++    {
++        let mut c = config(ListMode::Blacklist);
++        c.blacklist.push("Managed WiFi".into());
++        c.validate().unwrap();
++        assert_eq!(c.blacklist.len(), 1);
++        c.blacklist.push("bad\nssid".into());
++        assert!(c.validate().is_err());
++        assert!(serde_json::from_str::<WifiConfig>(r#"{"mode":"invalid"}"#).is_err());
++        assert!(
++            serde_json::from_str::<WifiConfig>(r#"{"enabled":true,"shell":"unexpected"}"#).is_err()
++        );
++    }
++    #[test]
++    fn wifi_detection_uses_active_default_route_instead_of_connected_ssid_alone() {
++        let c = config(ListMode::Blacklist);
++        let iface = parse_interface("1.1.1.1 via 192.0.2.1 dev rmnet_data2 table rmnet_data2");
++        assert!(!decide(&c, iface, Some("Managed WiFi".into())).direct);
++        assert_eq!(parse_interface("default dev dummy0"), None);
 +    }
 +}
 diff --git a/crates/dae-daemon/src/production_runtime_owner/command.rs b/crates/dae-daemon/src/production_runtime_owner/command.rs
@@ -941,6 +1714,25 @@ index d9910473..544db1f5 100644
          match File::open(PathBuf::from(parent).join(name)) {
              Ok(file) => return Ok(file),
              Err(err) => last_err = Some(err),
+diff --git a/crates/dae-product-control/src/local_control_client.rs b/crates/dae-product-control/src/local_control_client.rs
+index 4c9c8654..665d8ed2 100644
+--- a/crates/dae-product-control/src/local_control_client.rs
++++ b/crates/dae-product-control/src/local_control_client.rs
+@@ -132,6 +132,14 @@ fn request_local_control_status(path: &Path, timeout: Duration) -> io::Result<Va
+     request_local_control(path, timeout, json!({"op": LOCAL_CONTROL_OP_STATUS}))
+ }
+ 
++pub fn request_local_control_network_policy(path: &Path, direct: bool) -> io::Result<Value> {
++    request_local_control(
++        path,
++        Duration::from_secs(25),
++        json!({"op": "network-policy", "direct": direct}),
++    )
++}
++
+ fn request_local_control(path: &Path, timeout: Duration, request: Value) -> io::Result<Value> {
+     let mut stream = UnixStream::connect(path)?;
+     stream.set_read_timeout(Some(timeout))?;
 diff --git a/crates/dae-product-control/src/network.rs b/crates/dae-product-control/src/network.rs
 index 4fe13016..383318c2 100644
 --- a/crates/dae-product-control/src/network.rs
@@ -1002,6 +1794,26 @@ index 7f8f5651..6b76e945 100644
      ensure_table_column(
          conn,
          "systems",
+diff --git a/crates/dae-product-runtime/src/state.rs b/crates/dae-product-runtime/src/state.rs
+index f9420d8b..7e883a65 100644
+--- a/crates/dae-product-runtime/src/state.rs
++++ b/crates/dae-product-runtime/src/state.rs
+@@ -9,6 +9,7 @@ use crate::{RuntimeApplyState, RuntimeTrafficCarry, RuntimeTransitionIdentity};
+ #[derive(Debug)]
+ pub struct ProductRuntimeState<R> {
+     pub runtime: Option<R>,
++    pub network_policy_paused: bool,
+     pub config: Option<Arc<Config>>,
+     pub config_content: Option<Arc<str>>,
+     pub last_error: Option<String>,
+@@ -32,6 +33,7 @@ impl<R> Default for ProductRuntimeState<R> {
+     fn default() -> Self {
+         Self {
+             runtime: None,
++            network_policy_paused: false,
+             config: None,
+             config_content: None,
+             last_error: None,
 diff --git a/crates/dae-product-subscription/src/helper_process.rs b/crates/dae-product-subscription/src/helper_process.rs
 index 5ad160e5..544bd8c7 100644
 --- a/crates/dae-product-subscription/src/helper_process.rs

@@ -1,10 +1,19 @@
 <!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="light dark"><title>DaeNext</title><link rel="stylesheet" href="style.css"></head>
 <body><main>
-<header><div class="brand"><span class="mark">D</span><div><h1>DaeNext</h1><p>Android · KernelSU</p></div></div><span class="version">0.1.0 α5</span></header>
+<header><div class="brand"><span class="mark">D</span><div><h1>DaeNext</h1><p>Android · KernelSU</p></div></div><span class="version">0.1.0 α6</span></header>
 <section class="status-card"><div class="eyebrow">代理服务</div><div class="headline"><span class="indicator" id="indicator"></span><h2 id="state">正在读取</h2></div><p id="detail">连接设备服务…</p><div class="stats"><div><span>当前网络</span><b id="network">—</b></div><div><span>服务进程</span><b id="pid">—</b></div></div><div class="actions"><button id="start" class="primary">启动服务</button><button id="stop">停止</button><button id="restart">重启</button></div></section>
 <a class="panel-card" href="http://127.0.0.1:2023/" id="panel"><div><h3>打开管理面板</h3><p>节点、订阅、分流规则与实时连接</p></div><span>↗</span></a>
 <section class="settings"><label><div><h3>开机启动</h3><p>启动后恢复上次的内核运行状态</p></div><input id="autostart" type="checkbox" role="switch"></label><label><div><h3>Google 服务联网兼容</h3><p>运行内核时恢复商店与 Google 服务联网，停止时还原。仅支持已验证的 ColorOS 系统。</p></div><input id="google-network" type="checkbox" role="switch"></label><div class="tools"><button id="reload">重载配置</button><button id="backup">备份数据</button><button id="logs">查看日志</button></div></section>
+<section class="settings wifi-settings" aria-labelledby="wifi-title">
+<label><div><h3 id="wifi-title">Wi-Fi 自动切换</h3><p>根据当前 Wi-Fi 名单，自动切换手机代理与直连。</p></div><input id="wifi-enabled" type="checkbox" role="switch"></label>
+<label class="form-field" for="wifi-mode">名单模式<select id="wifi-mode"><option value="blacklist">黑名单：名单内直连，其他 Wi-Fi 代理</option><option value="whitelist">白名单：仅名单内 Wi-Fi 使用代理</option></select></label>
+<label class="form-field" for="wifi-list"><span id="wifi-list-label">Wi-Fi 黑名单</span><textarea id="wifi-list" rows="5" placeholder="每行一个 Wi-Fi 名称" spellcheck="false" autocapitalize="off"></textarea></label>
+<p class="wifi-hint">SSID 精确匹配，区分大小写，支持空格与中文。黑白名单分别保存。</p>
+<label class="cellular-setting"><div><h3>非 Wi-Fi 网络使用代理</h3><p>移动数据等网络独立控制，通常保持开启。</p></div><input id="wifi-cellular" type="checkbox" role="switch" checked></label>
+<p id="wifi-current" class="wifi-current">正在读取当前网络…</p>
+<div class="tools"><button id="wifi-add">添加当前 Wi-Fi</button><button id="wifi-save">保存 Wi-Fi 设置</button></div>
+</section>
 <section class="guide"><h3>开始使用</h3><p>启动服务后，进入管理面板创建账户，添加节点和规则，再启动内核。初始规则为直连，可在面板中调整。</p><p class="muted">管理面板仅监听本机。更新与卸载会保留配置。</p></section>
 <div id="message" role="status" hidden></div><section id="log-section" hidden><h3>服务日志</h3><pre id="log-output"></pre></section>
 <footer>DaeNext · Rust native core</footer></main><script type="module" src="app.js"></script></body></html>

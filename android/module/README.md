@@ -6,7 +6,7 @@ ARM64 Android 上的 DaeNext 原生透明代理模块，提供 KernelSU WebUI、
 
 ## 安装与使用
 
-1. 在 KernelSU 管理器中安装 `DaedNext-KernelSU-v0.1.0-alpha4-arm64.zip`。
+1. 在 KernelSU 管理器中安装 Release 提供的 ARM64 ZIP。
 2. 打开模块 WebUI，点击「启动服务」。不支持热安装的 KernelSU 版本需要先重启。
 3. 进入管理面板 `http://127.0.0.1:2023/`，创建自己的管理账户，再添加节点、订阅和分流规则。
 4. 在面板中启动内核。初始配置使用 `wan_interface: auto`、不配置 LAN，默认直连。
@@ -20,6 +20,7 @@ ARM64 Android 上的 DaeNext 原生透明代理模块，提供 KernelSU WebUI、
 - `/data/adb/daenext/certs/`：从 Android 系统信任库生成的 CA 证书包。
 - `/data/adb/daenext/logs/`：启动与服务日志。
 - `/data/adb/daenext/backups/`：备份。
+- `/data/adb/daenext/wifi-policy.json`：Wi-Fi 自动切换设置，权限 0600，包含在模块备份中。
 - `/data/adb/daenext/no-autostart`：存在时关闭开机启动。
 
 Root shell：
@@ -38,9 +39,23 @@ $CTL autostart off
 $CTL autostart on
 $CTL google-network on
 $CTL google-network off
+$CTL wifi-policy get
 ```
 
 `status` 分别报告服务进程和 `readiness.runtimeRunning`，服务面板就绪不代表透明代理内核已启动。备份会短暂停止服务，以一致地保存 SQLite/WAL，再恢复此前的运行状态。
+
+## Wi-Fi 自动切换（alpha6）
+
+在模块 WebUI 启用“Wi-Fi 自动切换”，选择黑名单或白名单，按每行一个 SSID 填写并保存。新安装默认关闭，黑白名单分别保存，不预置个人网络名称。
+
+| 模式 | 名单内 Wi-Fi | 名单外 Wi-Fi |
+| --- | --- | --- |
+| 黑名单 | 手机直连 | 原有代理规则 |
+| 白名单 | 原有代理规则 | 手机直连 |
+
+“非 Wi-Fi 网络使用代理”独立控制移动数据等出口，默认开启。名单精确匹配、区分大小写。路由器是否具有代理由用户判断，本模块不自动检测。
+
+策略直连时保留管理面板，释放本模块的数据面；状态为 `networkPolicyPaused: true`。离开直连网络后按原启用意图恢复，手动停止内核后不会因切网自动启动。节点、订阅及分流配置不变。在直连期间启动内核或应用配置，会记录启用意图，待网络策略允许后接管。
 
 升级保留数据，已有安装会先备份和停止旧进程。卸载会停止服务并保留 `/data/adb/daenext`，便于恢复配置。模块不修改系统分区，不需要 metamodule。
 
@@ -79,6 +94,6 @@ python android/tools/package.py
 
 ## Google 服务联网兼容（alpha4）
 
-模块 WebUI 提供「Google 服务联网兼容」开关，发布包默认关闭。本机 ColorOS 在网络切换时把 Play 商店和 GMS/GSF 共享 UID 设置为禁止联网，TCX 接管流量前连接已经被拒绝。启用此选项后，仅在透明代理内核运行时，通过系统流量管理接口维护这两个应用的联网权限，每约 6 秒检查一次；关闭、停止服务或卸载时恢复记录的原策略。其他应用、Google 账户和商店数据不变。
+模块 WebUI 提供「Google 服务联网兼容」开关，发布包默认关闭。本机 ColorOS 在网络切换时把 Play 商店和 GMS/GSF 共享 UID 设置为禁止联网，TCX 接管流量前连接已经被拒绝。启用此选项后，在内核运行或用户仍启用内核的 Wi-Fi 策略直连期间，通过系统流量管理接口维护这两个应用的联网权限，每约 6 秒检查一次；关闭、手动停止内核、停止服务或卸载时恢复记录的原策略。其他应用、Google 账户和商店数据不变。
 
 目前仅支持 Android SDK 37 且 oplus-framework.jar SHA256 为 d6da8dd5cb56b780a98e1ab26c7284a974295eee0b8ad0107765c4949a62a36f 的已验证系统。未知系统不会收到猜测的 Binder 写入。选项保存在 /data/adb/daenext/google-network-enabled，原策略记录在 google-network-original；恢复失败时保留记录，便于重试。策略由系统流量管理应用使用的 UID 1000 调用；不添加 iptables/BPF 放行规则。

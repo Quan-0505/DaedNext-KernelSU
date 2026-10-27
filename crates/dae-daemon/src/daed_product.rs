@@ -401,6 +401,7 @@ use self::http_server::*;
 mod sse_runtime;
 use self::sse_runtime::*;
 mod local_control;
+mod wifi_policy;
 use self::local_control::*;
 mod api_routes;
 use self::api_routes::*;

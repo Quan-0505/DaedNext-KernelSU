@@ -67,10 +67,13 @@ sync_locked() {
  [ -f "$FLAG" ] || { restore_locked; return $?; }
  supported || return 1
  report=$(ready 1s 2>/dev/null)
- if ! printf '%s' "$report" | "$BB" grep -q '"runtimeRunning":true'; then
-  restore_locked
-  return $?
- fi
+ active=0
+ printf '%s' "$report" | "$BB" grep -q '"runtimeRunning":true' && active=1
+ # A Wi-Fi bypass is still an enabled user session. Keep the opted-in Google
+ # networking permission on managed Wi-Fi; a manual stop still restores it.
+ if printf '%s' "$report" | "$BB" grep -q '"networkPolicyPaused":true' &&
+    printf '%s' "$report" | "$BB" grep -q '"runtimeRequired":true'; then active=1; fi
+ if [ "$active" = 0 ]; then restore_locked; return $?; fi
  for pkg in com.android.vending com.google.android.gms; do
   uid=$(package_uid "$pkg")
   valid_uid "$uid" || continue

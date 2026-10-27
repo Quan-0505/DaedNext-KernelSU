@@ -95,7 +95,9 @@ impl ProductRuntimeManager {
         }
         self.inner()
             .lock()
-            .map(|state| state.runtime.is_none() && !state.cleanup.running)
+            .map(|state| {
+                state.runtime.is_none() && !state.cleanup.running && !state.network_policy_paused
+            })
             .unwrap_or(false)
     }
 

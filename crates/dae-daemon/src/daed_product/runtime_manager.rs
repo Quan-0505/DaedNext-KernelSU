@@ -354,6 +354,9 @@ impl ProductRuntimeManager {
     fn new_with_state(state: Option<PathBuf>) -> Self {
         let coordinator = RuntimeApplyCoordinator::new();
         let domain = ProductRuntimeDomain::new(coordinator.clone());
+        if let Ok(mut inner) = domain.state().lock() {
+            inner.network_policy_paused = wifi_policy::initial_direct_requested();
+        }
         let interface_recovery = ProductRuntimeInterfaceRecoverySupervisor::start(
             coordinator.clone(),
             domain.lifecycle().clone(),
@@ -457,6 +460,29 @@ fn reload_prepared_product_runtime_with_config_content(
 ) -> Result<RuntimeStartOutcome, String> {
     let config = Arc::clone(prepared.config());
     let desired_identity = prepared.transition_identity();
+    if inner
+        .lock()
+        .map_err(|_| "runtime policy lock poisoned")?
+        .network_policy_paused
+    {
+        let _lifecycle = lifecycle
+            .lock()
+            .map_err(|_| "runtime lifecycle lock poisoned")?;
+        let mut state = inner.lock().map_err(|_| "runtime policy lock poisoned")?;
+        if !state.network_policy_paused || state.runtime.is_some() {
+            return Err(
+                "network policy changed while preparing bypass configuration; retry".into(),
+            );
+        }
+        state.config = Some(config);
+        state.config_content = config_content;
+        state.transition_identity = desired_identity;
+        let report = json!({"status":"pass", "source":source,
+            "transition":"NetworkPolicyBypass", "networkPolicyPaused":true,
+            "runtimeStarted":false});
+        state.last_report = Some(Arc::new(report.clone()));
+        return Ok(RuntimeStartOutcome { report });
+    }
     let transition = {
         let state = inner
             .lock()
@@ -747,7 +773,8 @@ fn replace_prepared_product_runtime_with_config_content(
         .then(|| previous_dns_reload_snapshot.clone())
         .flatten();
     let latency_seed = replacement_health_seed_snapshots(
-        source, latency_seed.iter().cloned().chain(live_latency_seed),
+        source,
+        latency_seed.iter().cloned().chain(live_latency_seed),
     );
     let previous_cleanup_report = if previous_runtime_was_running {
         cleanup_replacement_before_start(inner, lifecycle_epoch, previous_runtime)?
@@ -767,8 +794,10 @@ fn replace_prepared_product_runtime_with_config_content(
         Ok((runtime, mut report)) => {
             if let Value::Object(report) = &mut report {
                 report.insert("transition".to_owned(), json!(transition.name()));
-                report.insert("networkHealthSeedDiscarded".to_owned(),
-                    json!(source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE));
+                report.insert(
+                    "networkHealthSeedDiscarded".to_owned(),
+                    json!(source == PRODUCT_RUNTIME_INTERFACE_RECOVERY_SOURCE),
+                );
                 report.insert(
                     "previousRuntimeCleanup".to_owned(),
                     previous_cleanup_report.clone().unwrap_or(Value::Null),
@@ -978,6 +1007,10 @@ impl ProductRuntimeManager {
         }
         let mut rendered = snapshot.render();
         if let Value::Object(object) = &mut rendered {
+            object.insert(
+                "networkPolicyPaused".to_owned(),
+                json!(self.network_policy_paused()),
+            );
             object.insert("pprof".to_owned(), self.pprof_runtime.status());
         }
         rendered

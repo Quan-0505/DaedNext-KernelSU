@@ -34,6 +34,7 @@ DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust �
 | 双层管理界面 | KernelSU WebUI 管理服务与兼容选项；DaedNext 面板配置节点、订阅、策略组、DNS、路由与日志。 |
 | 服务生命周期 | 提供启动、停止、重启、重载、开机恢复、状态检查与一致性备份。 |
 | Android 网络适配 | 自动选择 WAN，使用 Android 策略路由同时监测 IPv4／IPv6，支持 Wi-Fi／蜂窝切换后的数据面恢复。 |
+| Wi-Fi 自动切换 | 黑名单内直连、名单外代理；白名单反向。移动数据策略独立，保留手动停止意图。 |
 | 节点健康检查 | 新安装默认每 50 秒检查；切网恢复立即重新探测。升级保留已有用户的间隔设置。 |
 | 蜂窝网络修复 | 处理 QoS 改写数据包标记造成的自身流量回环，以及命名空间重建时的编号冲突。 |
 | 系统信任库 | 从 Android 系统证书目录生成 CA bundle，默认保留节点 TLS 证书校验。 |
@@ -63,9 +64,9 @@ flowchart LR
 | 内核能力 | 需具备兼容的 eBPF/TC、BTF、veth 与网络命名空间支持；厂商限制会影响实际可用性。 |
 | 已验证设备 | 一加 13 / PJZ110，Android 17 / SDK 37。 |
 | 已验证内核 | `6.6.118-android15` AGKI，SELinux Enforcing。 |
-| 当前实测版本 | 模块 `v0.1.0-alpha5`，核心 `3.1.0-android-ksu.4`。 |
+| 当前实测版本 | 模块 `v0.1.0-alpha6`，核心 `3.1.0-android-ksu.5`。 |
 
-alpha5 修复切网时配置不变导致恢复无效的问题，并减少重复重建；验证覆盖重复 Wi-Fi／5G 切换、同配置接口变化及严格 TLS 连接。已补测无上游代理的普通手机热点与 5G 双向切换，均自动恢复。标准冷启动及用户确认的 Play 商店首页记录来自 alpha4；alpha5 的具体测试结果与限制见下方实测记录。
+alpha6 新增 Wi-Fi 黑白名单与独立的非 Wi-Fi 策略：指定网络可自动直连，离开后按原启用意图恢复代理。实机验证覆盖黑白名单命中与未命中、重复 Wi-Fi／5G 切换、手动停止及直连期间启动。alpha5 的普通热点切换和 alpha4 的冷启动记录分别保留；alpha6 本轮未重新验证冷启动。
 
 当前设备的 cgroup attach 受到厂商内核限制，配置应避免 `pname()` 进程名路由。全部 UDP/QUIC、IPv6 场景、其他机型、Play 应用安装与付费购买不在本轮验收结论内。具体条件和证据摘要见 [实测记录](android/docs/VALIDATION.md)。
 
@@ -75,7 +76,7 @@ alpha5 修复切网时配置不变导致恢复无效的问题，并减少重复�
 
 从 [Latest Release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest) 下载 ARM64 ZIP，在 KernelSU 管理器中选择本地安装，完成后重启。
 
-当前实测安装包：[`DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha5/DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip)。Release 只提供安装 ZIP。
+当前实测安装包：[`DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha6/DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip)。Release 只提供安装 ZIP。
 
 安装前停止其他透明代理核心或 VPN，避免重复接管流量。模块包含冲突检测，但不能代替对其他代理状态的检查。
 
@@ -93,11 +94,17 @@ alpha5 修复切网时配置不变导致恢复无效的问题，并减少重复�
 如果已验证的 ColorOS 系统在切换网络时限制 Play 商店与 Google 服务联网，可在模块 WebUI 中启用 **Google 服务联网兼容**。
 
 - 默认关闭，仅针对商店和 Google 服务对应的主用户 UID；不清除账户或应用数据。
-- 透明代理内核运行时维护对应联网策略，停止内核、停止服务或关闭选项时按记录还原。
+- 内核运行或用户仍启用内核的 Wi-Fi 策略直连期间维护联网策略；手动停止内核、停止服务或关闭选项时按记录还原。
 - 已被外部修改的策略会保留；恢复失败时保留原策略记录以便重试。
 - 仅允许匹配已验证 SDK 与框架哈希的系统执行写入；不匹配的系统不会自动套用。
 
 这是设备适配选项，不是通用的 Google 服务安装或认证工具。实现与适用条件见 [模块说明](android/module/README.md#google-服务联网兼容alpha4)。
+
+### 4. 按需设置 Wi-Fi 自动切换
+
+在模块 WebUI 打开 **Wi-Fi 自动切换**，选择黑名单或白名单，按每行一个 SSID 填写并保存。黑名单中的 Wi-Fi 使用手机直连，其他 Wi-Fi 使用原有代理规则；白名单模式相反。移动数据由“非 Wi-Fi 网络使用代理”独立控制，默认开启。
+
+功能默认关闭且名单为空。策略直连时面板保持运行，`readiness.networkPolicyPaused` 为 `true`，数据面停止；离开该网络后仅在用户原来启用内核时恢复。手动停止不会被切网覆盖。详细行为见 [Wi-Fi 自动切换](android/docs/WIFI-POLICY.md)。
 
 ## 日常管理
 
@@ -125,6 +132,7 @@ CTL=/data/adb/modules/daenext/bin/daenextctl
 | --- | --- |
 | `/data/adb/modules/daenext/` | 模块程序与 WebUI。 |
 | `/data/adb/daenext/config/` | 数据库、配置和产品日志。 |
+| `/data/adb/daenext/wifi-policy.json` | Wi-Fi 自动切换设置，升级保留并纳入备份。 |
 | `/data/adb/daenext/assets/` | GeoIP / Geosite 资源。 |
 | `/data/adb/daenext/certs/` | 从系统信任库生成的 CA bundle。 |
 | `/data/adb/daenext/logs/` | 服务及启动日志。 |
