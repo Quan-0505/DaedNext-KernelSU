@@ -65,7 +65,7 @@ flowchart LR
 | Verified kernel | `6.6.118-android15` AGKI, SELinux Enforcing. |
 | Validated version | Module `v0.1.0-alpha5`, core `3.1.0-android-ksu.4`. |
 
-alpha5 fixes recovery when network state changes without a configuration change and avoids duplicate runtime reconstruction. Tests cover repeated Wi-Fi/5G transitions, interface changes with unchanged configuration, and strict TLS connectivity. The tested Wi-Fi network also provides an upstream proxy; Wi-Fi without one remains unverified. Cold-boot and user-confirmed Play Store homepage results were recorded on alpha4; see the validation record for alpha5-specific results and limits.
+alpha5 fixes recovery when network state changes without a configuration change and avoids duplicate runtime reconstruction. Tests cover repeated Wi-Fi/5G transitions, interface changes with unchanged configuration, and strict TLS connectivity. Bidirectional transitions between an ordinary hotspot without an upstream proxy and 5G also recovered automatically. Cold-boot and user-confirmed Play Store homepage results were recorded on alpha4; see the validation record for alpha5-specific results and limits.
 
 Vendor restrictions prevent cgroup attachment on the verified device, so avoid `pname()` process-name routing. Validation does not cover every UDP/QUIC or IPv6 scenario, other devices, Play Store installation flows or purchases. See [validation details](android/docs/VALIDATION.md).
 

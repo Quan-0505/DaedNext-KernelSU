@@ -65,7 +65,7 @@ flowchart LR
 | 已验证内核 | `6.6.118-android15` AGKI，SELinux Enforcing。 |
 | 当前实测版本 | 模块 `v0.1.0-alpha5`，核心 `3.1.0-android-ksu.4`。 |
 
-alpha5 修复切网时配置不变导致恢复无效的问题，并减少重复重建；验证覆盖重复 Wi-Fi／5G 切换、同配置接口变化及严格 TLS 连接。本轮 Wi-Fi 上游有代理，无上游代理 Wi-Fi 待补测。标准冷启动及用户确认的 Play 商店首页记录来自 alpha4；alpha5 的具体测试结果与限制见下方实测记录。
+alpha5 修复切网时配置不变导致恢复无效的问题，并减少重复重建；验证覆盖重复 Wi-Fi／5G 切换、同配置接口变化及严格 TLS 连接。已补测无上游代理的普通手机热点与 5G 双向切换，均自动恢复。标准冷启动及用户确认的 Play 商店首页记录来自 alpha4；alpha5 的具体测试结果与限制见下方实测记录。
 
 当前设备的 cgroup attach 受到厂商内核限制，配置应避免 `pname()` 进程名路由。全部 UDP/QUIC、IPv6 场景、其他机型、Play 应用安装与付费购买不在本轮验收结论内。具体条件和证据摘要见 [实测记录](android/docs/VALIDATION.md)。
 
