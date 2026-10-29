@@ -22,7 +22,7 @@ public final class MainActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private LinearLayout content, nav;
     private ScrollView scroll;
-    private TextView pageTitle, notice;
+    private TextView pageTitle, notice, badge;
     private AlertDialog formDialog;
     private JSONObject status, wifiConfig, metrics;
     private String mode = "blacklist";
@@ -30,10 +30,11 @@ public final class MainActivity extends Activity {
     private Switch wifiEnabled, cellular;
     private final List<View> actions = new ArrayList<>();
     private boolean busy, foreground, reading, wifiDraft;
-    private int page, generation;
+    private int page, generation, returnPage;
+    private long detailGroupId;
     private Appearance appearance;
     private int ink, muted, background, card, border, accent;
-    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置"};
+    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置", "配置", "群组"};
     private final Runnable ticker = new Runnable() { public void run() {
         if (foreground) { refreshStatus(false); main.postDelayed(this, 6000); }
     }};
@@ -50,7 +51,8 @@ public final class MainActivity extends Activity {
         LinearLayout brandRow=row();
         TextView brand = text("DaedNext", 22, ink); brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         brandRow.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
-        TextView badge=text("KernelSU",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
+        badge=text("KernelSU",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
+        badge.setOnClickListener(v->{if(page>=5)onBackPressed();});
         pageTitle = text("你的连接", 31, ink); pageTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);titleParams.topMargin=dp(15);header.addView(pageTitle,titleParams);
         root.addView(header);
@@ -60,9 +62,16 @@ public final class MainActivity extends Activity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         nav = row(); nav.setPadding(dp(5), dp(7), dp(5), dp(7)); nav.setBackground(shape(appearance.nav,28));
         LinearLayout.LayoutParams navParams=new LinearLayout.LayoutParams(-1,-2);navParams.setMargins(dp(18),dp(5),dp(18),dp(12));
+        returnPage=saved==null?0:saved.getInt("returnPage",0);
         root.addView(nav,navParams); buildNav(); showPage(saved==null?0:saved.getInt("page",0));
     }
-    @Override protected void onSaveInstanceState(Bundle out) { out.putInt("page",page); super.onSaveInstanceState(out); }
+    @Override protected void onSaveInstanceState(Bundle out) { out.putInt("page",page);out.putInt("returnPage",returnPage); super.onSaveInstanceState(out); }
+    @Override public void onBackPressed() {
+        if(busy)return;
+        if(page==6&&detailGroupId>0){showPage(6);return;}
+        if(page>=5){showPage(returnPage);return;}
+        super.onBackPressed();
+    }
     @Override protected void onResume() { super.onResume(); foreground = true; main.removeCallbacks(ticker); main.post(ticker); }
     @Override protected void onPause() { foreground = false; main.removeCallbacks(ticker); super.onPause(); }
     @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); worker.shutdownNow(); api.clear(); super.onDestroy(); }
@@ -97,7 +106,7 @@ public final class MainActivity extends Activity {
     }
     private void buildNav() {
         nav.removeAllViews();
-        for (int i=0;i<pages.length;i++) {
+        for (int i=0;i<5;i++) {
             final int index=i; LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
             if(i==page)iconFrame.setBackground(shape(appearance.selected,13));
@@ -118,11 +127,14 @@ public final class MainActivity extends Activity {
     }
     private void showPage(int target) {
         page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?"你的连接":pages[page]); buildNav(); wifiDraft=false;
+        detailGroupId=0;badge.setText(page>=5?"‹ 返回":"KernelSU");
         if (page==0) dashboard();
         else if (page==1) loadNodes();
         else if (page==2) loadSubscriptions();
         else if (page==3) loadWifi();
-        else settings();
+        else if(page==4)settings();
+        else if(page==5)loadConfigs();
+        else loadGroups();
         scroll.post(()->scroll.scrollTo(0,0));
         content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
     }
@@ -221,12 +233,13 @@ public final class MainActivity extends Activity {
     private void workspaceEntries() {
         LinearLayout entries=card("配置与群组");
         hint(entries,"管理核心参数、代理出口与自动优选策略。");
-        paired(entries,"配置",()->panel("/?panel=config"),"群组",()->panel("/?panel=group"));
+        paired(entries,"配置",()->openWorkspace(5),"群组",()->openWorkspace(6));
     }
+    private void openWorkspace(int target){if(page<5)returnPage=page;showPage(target);}
     private JSONArray items(JSONObject j) { JSONArray a=j.optJSONArray("items");return a==null?new JSONArray():a; }
     private void loadNodes() {
         LinearLayout tools=card("节点管理");hint(tools,"导入节点、查看延迟，使用策略组管理代理出口。");
-        paired(tools,"导入节点链接",this::importNodes,"策略组",()->panel("/?panel=group"));
+        paired(tools,"导入节点链接",this::importNodes,"策略组",()->openWorkspace(6));
         button(tools,"刷新节点 / 延迟",false,()->showPage(1));
         task("正在读取节点…",()->{
             JSONArray all=items(api.get("nodes")), subscribed=items(api.get("nodes?independent=false"));
@@ -245,7 +258,7 @@ public final class MainActivity extends Activity {
                     "管理节点",()->new AlertDialog.Builder(this).setTitle(node.optString("name"))
                     .setItems(new String[]{"编辑名称与链接","删除节点"},(d,index)->{if(index==0)editNode(node);else confirm("删除节点","将从模块中删除该节点。",()->task("正在删除…",()->api.delete("nodes/"+node.optLong("id")),j->showPage(1)));}).show());
             }
-            hint(card("共 "+all.length()+" 个节点"),"节点选择、自动优选策略与分流规则可在高级面板中调整。");
+            hint(card("共 "+all.length()+" 个节点"),"在群组页管理节点归属与自动优选策略。");
         });
     }
     private EditText field(LinearLayout parent,String label,String value,boolean multiline,boolean secret) {
@@ -369,7 +382,202 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.3"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.4"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+    }
+    // Native configuration workspace. Saving never implicitly reloads the runtime.
+    private void loadConfigs() {
+        LinearLayout top=card("运行参数");hint(top,"编辑核心参数和连通性探测。保存后，点击“应用当前配置”使修改生效。");
+        paired(top,"新建配置",()->task("正在准备配置…",()->api.get("configs"),data->{
+            JSONArray list=items(data);JSONObject template=null;
+            for(int i=0;i<list.length();i++)if(list.getJSONObject(i).optBoolean("selected"))template=list.getJSONObject(i);
+            if(template==null&&list.length()>0)template=list.getJSONObject(0);
+            if(template==null)task("正在读取默认值…",()->api.post("configs/parsed",new JSONObject()),j->configForm(null,j.optJSONObject("parsedGlobal")));
+            else configForm(null,template.optJSONObject("parsedGlobal"));
+        }),"刷新",()->showPage(5));
+        button(top,"应用当前配置",true,()->confirm("应用当前配置","将应用已选配置与群组设置，代理连接可能短暂重建。",()->task("正在应用配置…",()->api.post("runtime/reload",new JSONObject()),j->{Toast.makeText(this,"配置已应用",Toast.LENGTH_SHORT).show();refreshStatus(false);})));
+        task("正在读取配置…",()->api.get("configs"),result->{
+            JSONArray list=items(result);
+            if(list.length()==0)hint(card("还没有配置"),"新建一份配置后，选择并应用。");
+            for(int i=0;i<list.length();i++){
+                JSONObject config=list.getJSONObject(i),values=config.optJSONObject("parsedGlobal");
+                LinearLayout c=card(config.optString("name","未命名配置"));
+                TextView state=text(config.optBoolean("selected")?"● 已选配置":"备用配置",12,config.optBoolean("selected")?accent:muted);c.addView(state);
+                if(values!=null){
+                    hint(c,"检查间隔  "+values.optString("checkInterval","—")+"    拨号模式  "+values.optString("dialMode","—"));
+                    hint(c,"日志级别  "+values.optString("logLevel","—"));
+                }else hint(c,"解析异常："+config.optString("parseError","无法读取结构化参数"));
+                paired(c,"编辑参数",()->task("正在读取参数…",()->api.get("configs/"+config.optLong("id")),fresh->configForm(fresh,fresh.optJSONObject("parsedGlobal"))),
+                    "更多",()->new AlertDialog.Builder(this).setTitle(config.optString("name"))
+                        .setItems(new String[]{"选择此配置","复制配置","删除配置"},(dialog,index)->{
+                            if(index==0)task("正在选择配置…",()->api.post("configs/"+config.optLong("id")+"/select",new JSONObject()),j->{showPage(5);Toast.makeText(this,"已选择，应用后生效",Toast.LENGTH_LONG).show();});
+                            else if(index==1){try{configForm(null,values);}catch(Exception e){error(e);}}
+                            else if(config.optBoolean("selected"))error(new Exception("当前配置已被选中，请先选择另一份配置后再删除"));
+                            else confirm("删除配置","将删除“"+config.optString("name")+"”。正在运行使用的配置无法删除。",()->task("正在删除配置…",()->api.delete("configs/"+config.optLong("id")),j->showPage(5)));
+                        }).show());
+            }
+        });
+    }
+    private Spinner choices(LinearLayout parent,String label,String value,String[] values){
+        hint(parent,label);ArrayList<String> options=new ArrayList<>(Arrays.asList(values));
+        if(!options.contains(value))options.add(value);
+        Spinner spinner=new Spinner(this);spinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,options));
+        spinner.setSelection(options.indexOf(value));parent.addView(spinner,new LinearLayout.LayoutParams(-1,dp(48)));return spinner;
+    }
+    private void formHeading(LinearLayout parent,String title){TextView heading=text(title,17,accent);heading.setPadding(0,dp(16),0,dp(8));parent.addView(heading);}
+    private void configForm(JSONObject existing,JSONObject source) throws Exception {
+        if(source==null)throw new Exception("配置解析失败，请先检查原配置；未修改任何参数");
+        JSONObject original=new JSONObject(source.toString());LinearLayout fields=formFields();
+        EditText name=field(fields,"配置名称",existing==null?"新配置":existing.optString("name"),false,false);
+        Map<String,EditText> inputs=new LinkedHashMap<>();Map<String,Switch> toggles=new LinkedHashMap<>();
+        Map<String,Spinner> selects=new LinkedHashMap<>();
+        String[][] definitions={
+            {"连接与探测","checkInterval","检查间隔（如 50s）","checkTolerance","切换容差（如 50ms）","tcpCheckUrl","TCP 探测地址 · 每行一项","udpCheckDns","UDP DNS 探测地址 · 每行一项","tcpCheckHttpMethod","HTTP 探测方法","sniffingTimeout","流量嗅探超时"},
+            {"拨号与日志","dialMode","拨号模式","logLevel","日志级别","fallbackResolver","备用 DNS 地址","tlsImplementation","TLS 实现","utlsImitate","uTLS 客户端指纹","bandwidthMaxTx","最大上传带宽","bandwidthMaxRx","最大下载带宽"},
+            {"接口与兼容","wanInterface","WAN 接口 · 每行一项","lanInterface","LAN 接口 · 每行一项","allowInsecure","允许不安全 TLS","tproxyPortProtect","保护透明代理端口","disableWaitingNetwork","不等待网络就绪","enableLocalTcpFastRedirect","本机 TCP 快速重定向","autoConfigKernelParameter","自动设置内核参数","mptcp","启用 MPTCP"}
+        };
+        for(String[] section:definitions){formHeading(fields,section[0]);for(int i=1;i<section.length;i+=2){
+            String key=section[i],label=section[i+1];if(!original.has(key))continue;Object value=original.get(key);
+            if(value instanceof Boolean){Switch toggle=new Switch(this);toggle.setText(label);toggle.setTextColor(ink);toggle.setChecked((Boolean)value);toggle.setPadding(0,dp(10),0,dp(10));fields.addView(toggle);toggles.put(key,toggle);}
+            else if(key.equals("dialMode"))selects.put(key,choices(fields,label,value.toString(),new String[]{"domain+","domain","ip","domain++"}));
+            else if(key.equals("logLevel"))selects.put(key,choices(fields,label,value.toString(),new String[]{"trace","debug","info","warn","error","fatal"}));
+            else if(key.equals("tcpCheckHttpMethod"))selects.put(key,choices(fields,label,value.toString(),new String[]{"HEAD","GET"}));
+            else inputs.put(key,field(fields,label,value instanceof JSONArray?join((JSONArray)value):value.toString(),value instanceof JSONArray,false));
+        }}
+        hint(fields,"透明代理端口、路由标记及其他参数沿用原值。保存不会自动切换当前连接。");
+        form(existing==null?"新建配置":"编辑配置",fields,()->{
+            try{
+                String title=name.getText().toString().trim();if(title.isEmpty())throw new Exception("请填写配置名称");
+                JSONObject edited=new JSONObject(original.toString());
+                for(Map.Entry<String,EditText> entry:inputs.entrySet()){
+                    String key=entry.getKey(),value=entry.getValue().getText().toString().trim();
+                    if(original.get(key) instanceof JSONArray){JSONArray array=new JSONArray();for(String line:value.split("\\r?\\n"))if(!line.trim().isEmpty())array.put(line.trim());edited.put(key,array);}
+                    else edited.put(key,value);
+                }
+                for(Map.Entry<String,Switch> entry:toggles.entrySet())edited.put(entry.getKey(),entry.getValue().isChecked());
+                for(Map.Entry<String,Spinner> entry:selects.entrySet())edited.put(entry.getKey(),entry.getValue().getSelectedItem().toString());
+                JSONObject body=new JSONObject().put("name",title).put("parsedGlobal",edited);
+                task("正在校验并保存配置…",()->{
+                    if(existing==null)return api.post("configs",body);
+                    JSONObject latest=api.get("configs/"+existing.getLong("id"));
+                    if(latest.optLong("version")!=existing.optLong("version"))throw new Exception("配置已被其他页面修改，请取消后刷新再编辑");
+                    return api.patch("configs/"+existing.getLong("id"),body);
+                },j->{showPage(5);Toast.makeText(this,"已保存，应用后生效",Toast.LENGTH_LONG).show();});
+            }catch(Exception e){error(e);}
+        });
+    }
+
+    // Native group workspace and per-membership changes preserve unrelated filters.
+    private static final String[] POLICIES={"min_moving_avg","min_avg10","min","random","fixed"};
+    private static final String[] POLICY_LABELS={"平滑延迟优选","最近十次平均优选","最低延迟","随机选择","固定单节点"};
+    private String policyLabel(String key){for(int i=0;i<POLICIES.length;i++)if(POLICIES[i].equals(key))return POLICY_LABELS[i];return key;}
+    private void loadGroups(){
+        LinearLayout top=card("代理出口");hint(top,"为节点和订阅设置出口策略。编辑后在配置页应用，使修改生效。");
+        paired(top,"新建群组",()->groupForm(null),"刷新",()->showPage(6));
+        task("正在读取群组…",()->api.get("groups?summary=true"),result->{
+            JSONArray groups=items(result);if(groups.length()==0)hint(card("还没有群组"),"新建群组，再添加节点或订阅。");
+            for(int i=0;i<groups.length();i++){
+                JSONObject group=groups.getJSONObject(i);LinearLayout c=card(group.optString("name","未命名群组"));
+                c.addView(text(policyLabel(group.optString("policy")),14,accent));
+                hint(c,group.optInt("nodeCount")+" 个直接节点  ·  "+group.optInt("subscriptionCount")+" 个订阅  ·  "+group.optInt("materializedCandidateCount")+" 个候选");
+                JSONObject selected=group.optJSONObject("runtimeSelectedNode"),best=group.optJSONObject("bestNode");
+                if(selected!=null)hint(c,"运行时出口  "+selected.optString("name","—"));
+                else if(best!=null)hint(c,"最近探测优选  "+best.optString("name","—"));
+                paired(c,"管理成员",()->groupDetails(group.optLong("id")),"编辑策略",()->task("正在读取策略…",()->api.get("groups/"+group.optLong("id")),this::groupForm));
+            }
+        });
+    }
+    private void groupForm(JSONObject group){
+        LinearLayout fields=formFields();EditText name=field(fields,"群组名称",group==null?"":group.optString("name"),false,false);
+        hint(fields,"出口选择策略");Spinner policy=new Spinner(this);policy.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,POLICY_LABELS));
+        int selected=0;for(int i=0;group!=null&&i<POLICIES.length;i++)if(POLICIES[i].equals(group.optString("policy")))selected=i;
+        policy.setSelection(selected);fields.addView(policy,new LinearLayout.LayoutParams(-1,dp(48)));
+        hint(fields,"固定策略只允许一个候选节点；自动优选依据探测结果选择出口。");
+        if(group!=null)hint(fields,"修改名称后，引用此群组的路由规则也需要同步。");
+        JSONArray params=group==null?new JSONArray():group.optJSONArray("policyParams");StringBuilder existing=new StringBuilder();
+        if(params!=null)for(int i=0;i<params.length();i++){JSONObject param=params.optJSONObject(i);if(param!=null){if(existing.length()>0)existing.append('\n');existing.append(param.optString("key")).append('=').append(param.optString("val"));}}
+        EditText options=field(fields,"可选策略参数 · 每行 key=value",existing.toString(),true,false);
+        form(group==null?"新建群组":"编辑群组",fields,()->{
+            try{
+                String title=name.getText().toString().trim();if(!title.matches("[\\p{L}_][\\p{L}\\p{N}_-]*"))throw new Exception("名称可使用中英文字、数字、下划线或连字符，以文字或下划线开头");
+                JSONArray values=new JSONArray();HashSet<String> keys=new HashSet<>();
+                for(String line:options.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty()){
+                    int split=line.indexOf('=');if(split<1)throw new Exception("策略参数请按 key=value 填写");
+                    String key=line.substring(0,split).trim();if(!keys.add(key))throw new Exception("策略参数不能重复："+key);
+                    values.put(new JSONObject().put("key",key).put("val",line.substring(split+1).trim()));
+                }
+                JSONObject body=new JSONObject().put("name",title).put("policy",POLICIES[policy.getSelectedItemPosition()]).put("policyParams",values);
+                task("正在保存群组…",()->{
+                    if(group==null)return api.post("groups",body);
+                    JSONObject latest=api.get("groups/"+group.getLong("id"));
+                    if(latest.optLong("version")!=group.optLong("version"))throw new Exception("群组已被修改，请取消后刷新再编辑");
+                    return api.patch("groups/"+group.getLong("id"),body);
+                },j->{showPage(6);Toast.makeText(this,"已保存，应用后生效",Toast.LENGTH_LONG).show();});
+            }catch(Exception e){error(e);}
+        });
+    }
+    private void groupDetails(long id){
+        task("正在读取群组成员…",()->api.get("groups/"+id),group->{
+            content.removeAllViews();actions.clear();generation++;detailGroupId=id;pageTitle.setText(group.optString("name","群组"));
+            LinearLayout top=card("群组策略");top.addView(text(policyLabel(group.optString("policy")),17,accent));
+            hint(top,"成员变更保存到群组，应用配置后更新代理出口。");paired(top,"编辑策略",()->groupForm(group),"返回群组",()->showPage(6));
+            LinearLayout nodes=card("直接节点");JSONArray nodeList=group.optJSONArray("nodes");
+            hint(nodes,(nodeList==null?0:nodeList.length())+" 个节点，独立于订阅筛选");button(nodes,"添加节点",false,()->pickGroupNodes(group));
+            if(nodeList!=null)for(int i=0;i<nodeList.length();i++){
+                JSONObject node=nodeList.getJSONObject(i);LinearLayout c=card(node.optString("name","未命名节点"));hint(c,node.optString("protocol").toUpperCase(Locale.ROOT));
+                button(c,"移出群组",false,()->confirm("移出节点","只移出当前群组，保留节点本身。",()->task("正在移出节点…",()->api.delete("groups/"+id+"/nodes",new JSONObject().put("nodeIds",new JSONArray().put(node.getLong("id")))),j->groupDetails(id)))).setTextColor(appearance.danger);
+            }
+            LinearLayout subs=card("订阅成员");JSONArray subscriptions=group.optJSONArray("subscriptions");
+            hint(subs,(subscriptions==null?0:subscriptions.length())+" 个订阅，每份订阅可单独筛选节点");button(subs,"添加订阅",false,()->pickGroupSubscription(id));
+            if(subscriptions!=null)for(int i=0;i<subscriptions.length();i++){
+                JSONObject subscription=subscriptions.getJSONObject(i);LinearLayout c=card(subscription.optString("tag","未命名订阅"));
+                String filter=subscription.isNull("nameFilterRegex")?"":subscription.optString("nameFilterRegex");hint(c,"筛选  "+(filter.isEmpty()?"全部节点":filter));hint(c,"匹配 "+subscription.optInt("matchedCount")+" 个节点");
+                paired(c,"筛选与节点",()->subscriptionMembership(id,subscription),"移出订阅",()->confirm("移出订阅","只解除与当前群组的关联，保留订阅和节点。",()->task("正在移出订阅…",()->api.delete("groups/"+id+"/subscriptions",new JSONObject().put("subscriptionIds",new JSONArray().put(subscription.getLong("subscriptionId")))),j->groupDetails(id))))[1].setTextColor(appearance.danger);
+            }
+            button(content,"删除群组",false,()->confirm("删除群组","将删除群组及其成员关联，节点和订阅仍保留。正在运行使用的群组无法删除。",()->task("正在删除群组…",()->api.delete("groups/"+id),j->showPage(6)))).setTextColor(appearance.danger);
+            scroll.post(()->scroll.scrollTo(0,0));
+        });
+    }
+    private void pickGroupNodes(JSONObject group){
+        task("正在读取可用节点…",()->{
+            JSONArray all=items(api.get("nodes")),subscribed=items(api.get("nodes?independent=false"));for(int i=0;i<subscribed.length();i++)all.put(subscribed.get(i));return all;
+        },all->{
+            HashSet<Long> attached=new HashSet<>();JSONArray current=group.optJSONArray("nodes");if(current!=null)for(int i=0;i<current.length();i++)attached.add(current.getJSONObject(i).getLong("id"));
+            ArrayList<JSONObject> available=new ArrayList<>();for(int i=0;i<all.length();i++)if(!attached.contains(all.getJSONObject(i).getLong("id")))available.add(all.getJSONObject(i));
+            if(available.isEmpty()){Toast.makeText(this,"没有可添加的节点",Toast.LENGTH_SHORT).show();return;}
+            String[] labels=new String[available.size()];boolean[] checked=new boolean[labels.length];for(int i=0;i<labels.length;i++)labels[i]=available.get(i).optString("name","未命名节点");
+            AlertDialog picker=new AlertDialog.Builder(this).setTitle("添加节点").setMultiChoiceItems(labels,checked,(d,index,on)->checked[index]=on).setNegativeButton("取消",null).setPositiveButton("添加",null).create();
+            picker.setOnShowListener(d->picker.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
+                if(busy)return;JSONArray ids=new JSONArray();for(int i=0;i<checked.length;i++)if(checked[i])ids.put(available.get(i).optLong("id"));
+                if(ids.length()==0){Toast.makeText(this,"请至少选择一个节点",Toast.LENGTH_SHORT).show();return;}
+                task("正在添加节点…",()->api.post("groups/"+group.getLong("id")+"/nodes",new JSONObject().put("nodeIds",ids)),j->{picker.dismiss();groupDetails(group.getLong("id"));});
+            }));picker.show();
+        });
+    }
+    private void pickGroupSubscription(long groupId){
+        task("正在读取订阅…",()->api.get("subscriptions"),result->{
+            JSONArray list=items(result);if(list.length()==0){Toast.makeText(this,"请先在订阅页添加订阅",Toast.LENGTH_SHORT).show();return;}
+            String[] labels=new String[list.length()];for(int i=0;i<labels.length;i++)labels[i]=list.getJSONObject(i).optString("tag","未命名订阅");
+            new AlertDialog.Builder(this).setTitle("选择订阅").setItems(labels,(d,index)->{
+                try{
+                    long id=list.getJSONObject(index).getLong("id");
+                    task("正在读取订阅关联…",()->api.get("groups/"+groupId),group->{
+                        JSONArray attached=group.optJSONArray("subscriptions");
+                        if(attached!=null)for(int i=0;i<attached.length();i++){JSONObject sub=attached.getJSONObject(i);if(sub.optLong("subscriptionId")==id){subscriptionMembership(groupId,sub);return;}}
+                        subscriptionMembership(groupId,new JSONObject().put("subscriptionId",id).put("tag",labels[index]));
+                    });
+                }catch(Exception e){error(e);}
+            }).setNegativeButton("取消",null).show();
+        });
+    }
+    private void subscriptionMembership(long groupId,JSONObject subscription){
+        LinearLayout fields=formFields();hint(fields,subscription.optString("tag","订阅"));
+        EditText filter=field(fields,"节点名称筛选 · 正则表达式，留空表示全部",subscription.isNull("nameFilterRegex")?"":subscription.optString("nameFilterRegex"),false,false);
+        JSONArray matched=subscription.optJSONArray("matchedNodes");if(matched!=null){formHeading(fields,"当前匹配节点");for(int i=0;i<matched.length();i++)hint(fields,matched.optJSONObject(i).optString("name","未命名节点"));}
+        form("订阅筛选",fields,()->{
+            try{String expression=filter.getText().toString();JSONObject body=new JSONObject().put("subscriptionIds",new JSONArray().put(subscription.getLong("subscriptionId"))).put("nameFilterRegex",expression.isEmpty()?JSONObject.NULL:expression);
+                task("正在保存订阅筛选…",()->api.post("groups/"+groupId+"/subscriptions",body),j->groupDetails(groupId));
+            }catch(Exception e){error(e);}
+        });
     }
     private void option(LinearLayout parent,String title,boolean checked,String command) {
         Switch option=new Switch(this);option.setText(title);option.setTextColor(ink);option.setChecked(checked);option.setPadding(0,dp(10),0,dp(10));parent.addView(option);actions.add(option);

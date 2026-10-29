@@ -25,6 +25,7 @@ final class ApiClient {
     JSONObject post(String path, JSONObject body) throws Exception { return request("POST", path, body, false); }
     JSONObject patch(String path, JSONObject body) throws Exception { return request("PUT", path, body, false); }
     JSONObject delete(String path) throws Exception { return request("DELETE", path, null, false); }
+    JSONObject delete(String path, JSONObject body) throws Exception { return request("DELETE", path, body, false); }
     private JSONObject request(String method, String path, JSONObject body, boolean retry) throws Exception {
         if (!path.matches("[a-zA-Z0-9/_?=&.-]+") || path.startsWith("/")) throw new IOException("无效的接口路径");
         HttpURLConnection connection = (HttpURLConnection)new URL("http://127.0.0.1:2023/api/" + path).openConnection(Proxy.NO_PROXY);

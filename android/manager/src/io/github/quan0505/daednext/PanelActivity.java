@@ -17,10 +17,6 @@ public final class PanelActivity extends Activity {
     static boolean local(Uri uri) {
         return "http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort()==2023 && uri.getUserInfo()==null;
     }
-    static String panelRoute(String requested) {
-        if("/?panel=config".equals(requested)||"/?panel=group".equals(requested))return requested;
-        return "/";
-    }
     @Override public void onCreate(Bundle saved) {
         Appearance appearance=new Appearance(this);appearance.apply(this);
         super.onCreate(saved);appearance.bars(this);
@@ -39,9 +35,8 @@ public final class PanelActivity extends Activity {
                 return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
             }
         });
-        // Workspace sections use a query parameter on the root hash route.
-        // Only the app's known destinations can enter the bootstrap document.
-        final String route=panelRoute(getIntent().getStringExtra("path"));
+        // Advanced tools open the root workspace; config and groups are native pages.
+        final String route="/";
         worker.execute(()->{
             try {
                 String token=new ApiClient(new ModuleClient()).panelSession();
