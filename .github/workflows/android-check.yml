@@ -40,3 +40,8 @@ jobs:
               assert db.execute('select running from systems').fetchone()[0] == 0
           PY
           git diff --exit-code -- android/module/defaults/config.dae
+      - name: Compile native Android manager without signing secrets
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' >/dev/null
+          python3 android/manager/build.py --unsigned

@@ -26,14 +26,17 @@ index fe5db534..930cd595 100644
  mod api_routes;
  use self::api_routes::*;
 diff --git a/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs b/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs
-index 32eb3628..c1edabf5 100644
+index 32eb3628..a0f1618e 100644
 --- a/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs
 +++ b/crates/dae-daemon/src/daed_product/cli_commands/dispatch.rs
-@@ -16,6 +16,7 @@ pub fn run_daed_product_with_args_and_version(
+@@ -16,6 +16,10 @@ pub fn run_daed_product_with_args_and_version(
          Some("state") => run_state_command(&args[1..]),
          Some("run") => run_product_server_command(&args[1..], version),
          Some("reload") => run_local_control_reload_command(&args[1..]),
 +        Some("wifi-policy") => wifi_policy::run_command(&args[1..]),
++        Some("manager-session") => {
++            dae_product_control::run_local_control_manager_session_command(&args[1..])
++        }
          Some("wait-ready") => run_local_control_wait_ready_command(&args[1..]),
          Some("export") => run_export_command(&args[1..]),
          Some("resetpass") => run_resetpass_command(&args[1..]),
@@ -51,7 +54,7 @@ index d758c61e..fcc3a94d 100644
              &runtime,
              &options.state,
 diff --git a/crates/dae-daemon/src/daed_product/local_control.rs b/crates/dae-daemon/src/daed_product/local_control.rs
-index 737e243b..25d7df5d 100644
+index 737e243b..86230d68 100644
 --- a/crates/dae-daemon/src/daed_product/local_control.rs
 +++ b/crates/dae-daemon/src/daed_product/local_control.rs
 @@ -24,7 +24,7 @@ impl Drop for LocalControlReloadBusyReset {
@@ -125,10 +128,16 @@ index 737e243b..25d7df5d 100644
                  reload_busy.store(false, Ordering::Release);
                  let _ = write_local_control_response(
                      &mut stream,
-@@ -222,6 +225,18 @@ fn dispatch_local_control_stream(
+@@ -222,6 +225,24 @@ fn dispatch_local_control_stream(
  fn handle_local_control_request(app: &AppState, request: &Value) -> Value {
      match request.get("op").and_then(Value::as_str) {
          Some(LOCAL_CONTROL_OP_STATUS) => handle_local_control_status(app),
++        // dispatch_local_control_stream checks SO_PEERCRED UID 0 before this
++        // handler; the TCP API never exposes this operation.
++        Some("manager-session") => {
++            dae_product_control::auth_crypto::local_manager_session(&app.state)
++                .unwrap_or_else(|error| json!({"ok":false,"error":error.to_string()}))
++        }
 +        Some("network-policy") => {
 +            let Some(direct) = request.get("direct").and_then(Value::as_bool) else {
 +                return json!({"ok":false,"error":"network-policy requires a boolean direct field"});
@@ -144,7 +153,7 @@ index 737e243b..25d7df5d 100644
          Some(LOCAL_CONTROL_OP_RELOAD) => handle_local_control_reload(app),
          Some(op) => {
              json!({"ok": false, "error": format!("unsupported local control operation: {op}")})
-@@ -235,7 +250,10 @@ fn handle_local_control_status(app: &AppState) -> Value {
+@@ -235,7 +256,10 @@ fn handle_local_control_status(app: &AppState) -> Value {
      let product_ready = app.shutdown.is_ready();
      let runtime_running = app.runtime.is_running();
      let runtime_required = app.runtime.runtime_required_for_readiness();
@@ -156,7 +165,7 @@ index 737e243b..25d7df5d 100644
      json!({
          "ok": ready,
          "ready": ready,
-@@ -243,6 +261,7 @@ fn handle_local_control_status(app: &AppState) -> Value {
+@@ -243,6 +267,7 @@ fn handle_local_control_status(app: &AppState) -> Value {
          "shuttingDown": shutting_down,
          "runtimeRunning": runtime_running,
          "runtimeRequired": runtime_required,
@@ -529,10 +538,38 @@ index bee9de52..ec2caeef 100644
 +#[cfg(test)]
 +mod wifi_policy;
 diff --git a/crates/dae-daemon/src/daed_product/tests/local_control.rs b/crates/dae-daemon/src/daed_product/tests/local_control.rs
-index 8ae0c6f0..3b17b0a9 100644
+index 8ae0c6f0..fa02d7ab 100644
 --- a/crates/dae-daemon/src/daed_product/tests/local_control.rs
 +++ b/crates/dae-daemon/src/daed_product/tests/local_control.rs
-@@ -79,6 +79,14 @@ fn local_control_reload_uses_live_runtime_state() {
+@@ -1,5 +1,27 @@
+ use super::*;
+ 
++#[test]
++fn local_manager_session_is_short_lived_and_preserves_existing_identity() {
++    let fixture = crate::daed_product::tests::support::FreshProductState::new("manager-session");
++    let empty = dae_product_control::auth_crypto::local_manager_session(fixture.state()).unwrap();
++    assert_eq!(empty["setupRequired"], true);
++    create_user_with_auth_worker(fixture.state(), "manager-test", "Local-Manager-918!").unwrap();
++    let session = dae_product_control::auth_crypto::local_manager_session(fixture.state()).unwrap();
++    assert_eq!(session["ok"], true);
++    let token = session["token"].as_str().unwrap();
++    let user = verify_token(fixture.state(), token).unwrap().unwrap();
++    assert_eq!(user.username(), "manager-test");
++    let remaining = session["expiresAt"].as_u64().unwrap() - unix_now();
++    assert!((590..=600).contains(&remaining));
++    assert!(session.get("password").is_none());
++    assert!(session.get("jwt_secret").is_none());
++    assert_eq!(user_count(fixture.state()).unwrap(), 1);
++    assert!(matches!(
++        classify_product_api_route("POST", "/manager-session"),
++        ProductApiRoute::NotFound
++    ));
++}
++
+ #[test]
+ fn local_control_reload_busy_gate_rejects_concurrent_work() {
+     let busy = AtomicBool::new(false);
+@@ -79,6 +101,14 @@ fn local_control_reload_uses_live_runtime_state() {
          json!("runtime is required but not running")
      );
  
@@ -1714,11 +1751,75 @@ index d9910473..544db1f5 100644
          match File::open(PathBuf::from(parent).join(name)) {
              Ok(file) => return Ok(file),
              Err(err) => last_err = Some(err),
+diff --git a/crates/dae-product-control/src/auth_crypto.rs b/crates/dae-product-control/src/auth_crypto.rs
+index 76d363a6..962e2350 100644
+--- a/crates/dae-product-control/src/auth_crypto.rs
++++ b/crates/dae-product-control/src/auth_crypto.rs
+@@ -14,6 +14,33 @@ use dae_product_persistence::{ProductUserRecord, load_user_by_username_without_s
+ 
+ const TOKEN_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
+ 
++/// A root-authorized local manager receives a short-lived session, never the
++/// stored password or JWT signing secret. This is not exposed over HTTP.
++pub fn local_manager_session(state: &Path) -> io::Result<serde_json::Value> {
++    use rusqlite::OptionalExtension;
++    let conn =
++        rusqlite::Connection::open_with_flags(state, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
++            .map_err(io::Error::other)?;
++    let username: Option<String> = conn
++        .query_row(
++            "SELECT username FROM users ORDER BY id LIMIT 1",
++            [],
++            |row| row.get(0),
++        )
++        .optional()
++        .map_err(io::Error::other)?;
++    let Some(username) = username else {
++        return Ok(serde_json::json!({"ok":false,"setupRequired":true}));
++    };
++    let user = load_user_by_username_without_schema_check(state, &username)?
++        .ok_or_else(|| io::Error::other("manager user no longer exists"))?;
++    let expires_at = unix_now()
++        .checked_add(600)
++        .ok_or_else(|| io::Error::other("manager session expiration overflow"))?;
++    Ok(serde_json::json!({"ok":true,"expiresAt":expires_at,
++        "token":sign_hs256_token(user.username(), user.jwt_secret().as_bytes(), expires_at)}))
++}
++
+ pub fn signed_token(user: &ProductUserRecord) -> io::Result<String> {
+     let exp = unix_now()
+         .checked_add(TOKEN_TTL_SECONDS)
 diff --git a/crates/dae-product-control/src/local_control_client.rs b/crates/dae-product-control/src/local_control_client.rs
-index 4c9c8654..665d8ed2 100644
+index 4c9c8654..d5febb15 100644
 --- a/crates/dae-product-control/src/local_control_client.rs
 +++ b/crates/dae-product-control/src/local_control_client.rs
-@@ -132,6 +132,14 @@ fn request_local_control_status(path: &Path, timeout: Duration) -> io::Result<Va
+@@ -14,6 +14,25 @@ pub const LOCAL_CONTROL_MAX_RESPONSE_BYTES: u64 = 16 * 1024;
+ pub const LOCAL_CONTROL_OP_RELOAD: &str = "reload";
+ pub const LOCAL_CONTROL_OP_STATUS: &str = "status";
+ 
++pub fn run_local_control_manager_session_command(args: &[String]) -> DaedProductOutput {
++    if unsafe { libc::geteuid() } != 0 {
++        return DaedProductOutput::error("Root is required");
++    }
++    let socket = match args {
++        [] => PathBuf::from(DEFAULT_PRODUCT_CONTROL_SOCKET),
++        [flag, value] if flag == "--control" => PathBuf::from(value),
++        _ => return DaedProductOutput::usage("manager-session [--control PATH]"),
++    };
++    match request_local_control(
++        &socket,
++        Duration::from_secs(5),
++        json!({"op":"manager-session"}),
++    ) {
++        Ok(response) => DaedProductOutput::ok(format!("{response}\n")),
++        Err(error) => DaedProductOutput::error(format!("manager session unavailable: {error}")),
++    }
++}
++
+ const LOCAL_CONTROL_IO_TIMEOUT: Duration = Duration::from_secs(60);
+ const LOCAL_CONTROL_READY_POLL_INTERVAL: Duration = Duration::from_millis(100);
+ 
+@@ -132,6 +151,14 @@ fn request_local_control_status(path: &Path, timeout: Duration) -> io::Result<Va
      request_local_control(path, timeout, json!({"op": LOCAL_CONTROL_OP_STATUS}))
  }
  

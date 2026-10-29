@@ -14,6 +14,25 @@ pub const LOCAL_CONTROL_MAX_RESPONSE_BYTES: u64 = 16 * 1024;
 pub const LOCAL_CONTROL_OP_RELOAD: &str = "reload";
 pub const LOCAL_CONTROL_OP_STATUS: &str = "status";
 
+pub fn run_local_control_manager_session_command(args: &[String]) -> DaedProductOutput {
+    if unsafe { libc::geteuid() } != 0 {
+        return DaedProductOutput::error("Root is required");
+    }
+    let socket = match args {
+        [] => PathBuf::from(DEFAULT_PRODUCT_CONTROL_SOCKET),
+        [flag, value] if flag == "--control" => PathBuf::from(value),
+        _ => return DaedProductOutput::usage("manager-session [--control PATH]"),
+    };
+    match request_local_control(
+        &socket,
+        Duration::from_secs(5),
+        json!({"op":"manager-session"}),
+    ) {
+        Ok(response) => DaedProductOutput::ok(format!("{response}\n")),
+        Err(error) => DaedProductOutput::error(format!("manager session unavailable: {error}")),
+    }
+}
+
 const LOCAL_CONTROL_IO_TIMEOUT: Duration = Duration::from_secs(60);
 const LOCAL_CONTROL_READY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 

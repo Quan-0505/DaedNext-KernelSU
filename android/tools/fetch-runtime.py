@@ -31,7 +31,7 @@ with tempfile.TemporaryDirectory() as scratch:
             name = PurePosixPath(entry.filename)
             if name.is_absolute() or '..' in name.parts or '\\' in entry.filename:
                 raise SystemExit('Unsafe archive path')
-            wanted = entry.filename in ('bin/daed', 'lib/libc++_shared.so', 'assets/geoip.dat', 'assets/geosite.dat') or entry.filename.startswith('panel/')
+            wanted = entry.filename in ('bin/daed', 'lib/libc++_shared.so', 'assets/geoip.dat', 'assets/geosite.dat', 'manager/DaedNext-Manager.apk') or entry.filename.startswith('panel/')
             if not wanted or entry.is_dir():
                 continue
             target = ROOT / 'module' / name

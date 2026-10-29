@@ -1,6 +1,28 @@
 use super::*;
 
 #[test]
+fn local_manager_session_is_short_lived_and_preserves_existing_identity() {
+    let fixture = crate::daed_product::tests::support::FreshProductState::new("manager-session");
+    let empty = dae_product_control::auth_crypto::local_manager_session(fixture.state()).unwrap();
+    assert_eq!(empty["setupRequired"], true);
+    create_user_with_auth_worker(fixture.state(), "manager-test", "Local-Manager-918!").unwrap();
+    let session = dae_product_control::auth_crypto::local_manager_session(fixture.state()).unwrap();
+    assert_eq!(session["ok"], true);
+    let token = session["token"].as_str().unwrap();
+    let user = verify_token(fixture.state(), token).unwrap().unwrap();
+    assert_eq!(user.username(), "manager-test");
+    let remaining = session["expiresAt"].as_u64().unwrap() - unix_now();
+    assert!((590..=600).contains(&remaining));
+    assert!(session.get("password").is_none());
+    assert!(session.get("jwt_secret").is_none());
+    assert_eq!(user_count(fixture.state()).unwrap(), 1);
+    assert!(matches!(
+        classify_product_api_route("POST", "/manager-session"),
+        ProductApiRoute::NotFound
+    ));
+}
+
+#[test]
 fn local_control_reload_busy_gate_rejects_concurrent_work() {
     let busy = AtomicBool::new(false);
     assert!(

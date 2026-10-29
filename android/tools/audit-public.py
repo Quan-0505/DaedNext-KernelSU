@@ -9,7 +9,7 @@ errors = []
 for name in filter(None, files):
     p = ROOT / name
     relative = p.relative_to(ROOT / 'android')
-    if any(part in ('private', 'backups', 'validation', '.build', 'dist') for part in relative.parts) or p.suffix in ('.db', '.sqlite', '.pcap', '.log', '.png'):
+    if any(part in ('private', 'backups', 'validation', '.build', 'dist') for part in relative.parts) or p.suffix in ('.db', '.sqlite', '.pcap', '.log', '.png', '.apk', '.p12', '.jks', '.keystore'):
         errors.append((name, 'private/generated artifact tracked'))
     if not p.is_file():
         continue

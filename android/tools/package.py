@@ -5,7 +5,7 @@ lock=json.loads((root/'upstream.lock.json').read_text(encoding='utf8'))
 module=root/'module'
 out=root/'dist'
 out.mkdir(exist_ok=True)
-required=['module.prop','service.sh','action.sh','customize.sh','uninstall.sh','skip_mount','bin/daed','bin/daenextctl','lib/libc++_shared.so','defaults/daed.db','defaults/wifi-policy.json','webroot/index.html','panel/index.html','assets/geoip.dat','assets/geosite.dat']
+required=['module.prop','service.sh','action.sh','customize.sh','uninstall.sh','skip_mount','bin/daed','bin/daenextctl','lib/libc++_shared.so','defaults/daed.db','defaults/wifi-policy.json','manager/DaedNext-Manager.apk','webroot/index.html','panel/index.html','assets/geoip.dat','assets/geosite.dat']
 assert all((module/f).is_file() for f in required)
 db=sqlite3.connect(f'file:{module / "defaults/daed.db"}?mode=ro',uri=True)
 for table in ('users','nodes','subscriptions'):
@@ -17,6 +17,7 @@ info={
  'panelCommit':(root/'panel-commit.txt').read_text().strip(),
  'corePatchSha256':hashlib.sha256((root/'patches/android-complete.patch').read_bytes()).hexdigest(),
  'daemonSha256':hashlib.sha256((module/'bin/daed').read_bytes()).hexdigest(),
+ 'managerSha256':hashlib.sha256((module/'manager/DaedNext-Manager.apk').read_bytes()).hexdigest(),
  'androidControlMark':16777216,
  'googleNetworkCompatibility':{'defaultEnabled':False,'frameworkSha256':'d6da8dd5cb56b780a98e1ab26c7284a974295eee0b8ad0107765c4949a62a36f','sdk':37},
  'kernelSUJavaScriptSdk':'3.0.2',

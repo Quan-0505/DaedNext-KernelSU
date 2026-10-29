@@ -17,6 +17,9 @@ pub fn run_daed_product_with_args_and_version(
         Some("run") => run_product_server_command(&args[1..], version),
         Some("reload") => run_local_control_reload_command(&args[1..]),
         Some("wifi-policy") => wifi_policy::run_command(&args[1..]),
+        Some("manager-session") => {
+            dae_product_control::run_local_control_manager_session_command(&args[1..])
+        }
         Some("wait-ready") => run_local_control_wait_ready_command(&args[1..]),
         Some("export") => run_export_command(&args[1..]),
         Some("resetpass") => run_resetpass_command(&args[1..]),

@@ -14,6 +14,33 @@ use dae_product_persistence::{ProductUserRecord, load_user_by_username_without_s
 
 const TOKEN_TTL_SECONDS: u64 = 30 * 24 * 60 * 60;
 
+/// A root-authorized local manager receives a short-lived session, never the
+/// stored password or JWT signing secret. This is not exposed over HTTP.
+pub fn local_manager_session(state: &Path) -> io::Result<serde_json::Value> {
+    use rusqlite::OptionalExtension;
+    let conn =
+        rusqlite::Connection::open_with_flags(state, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(io::Error::other)?;
+    let username: Option<String> = conn
+        .query_row(
+            "SELECT username FROM users ORDER BY id LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(io::Error::other)?;
+    let Some(username) = username else {
+        return Ok(serde_json::json!({"ok":false,"setupRequired":true}));
+    };
+    let user = load_user_by_username_without_schema_check(state, &username)?
+        .ok_or_else(|| io::Error::other("manager user no longer exists"))?;
+    let expires_at = unix_now()
+        .checked_add(600)
+        .ok_or_else(|| io::Error::other("manager session expiration overflow"))?;
+    Ok(serde_json::json!({"ok":true,"expiresAt":expires_at,
+        "token":sign_hs256_token(user.username(), user.jwt_secret().as_bytes(), expires_at)}))
+}
+
 pub fn signed_token(user: &ProductUserRecord) -> io::Result<String> {
     let exp = unix_now()
         .checked_add(TOKEN_TTL_SECONDS)

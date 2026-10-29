@@ -1,6 +1,6 @@
 # KernelSU Android integration
 
-当前模块：**v0.1.0-alpha6**；核心：**3.1.0-android-ksu.5**。
+当前模块：**v0.1.0-alpha7**；核心：**3.1.0-android-ksu.6**。
 
 本目录只包含可公开维护的模块源码、空白默认配置生成器、构建入口和 Android 补丁。Rust 核心完整源码位于仓库根目录，已经包含 Android 修改，克隆后不要重复应用补丁。
 
@@ -15,3 +15,5 @@
 公开仓库不接收设备数据库、备份、抓包、登录信息、订阅 URL、节点 URI 或个人截图。提交前运行 `python android/tools/audit-public.py`。
 
 Wi-Fi 黑白名单与移动数据策略见 [Wi-Fi 自动切换](docs/WIFI-POLICY.md)。
+
+原生 App、接口边界及签名维护见 [Android 管理器](manager/README.md)。

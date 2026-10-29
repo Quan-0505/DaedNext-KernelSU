@@ -31,7 +31,7 @@ The integration focuses on Android deployment: service lifecycle, system trust s
 | Capability | Description |
 | --- | --- |
 | Native traffic processing | Rust core with a TCX/eBPF data plane and configurable direct or proxy forwarding. |
-| Two management interfaces | KernelSU WebUI for service controls and compatibility options; DaedNext for nodes, subscriptions, groups, DNS, routing and logs. |
+| Native manager and WebUI | Android app for runtime controls, nodes, subscriptions, Wi-Fi policies and maintenance; KernelSU WebUI remains available, with an embedded DaedNext panel for advanced settings. |
 | Service lifecycle | Start, stop, restart, reload, boot recovery, readiness checks and consistent backups. |
 | Android networking | Automatic WAN selection, Android policy-route monitoring for IPv4/IPv6, and data-plane recovery across Wi-Fi/cellular transitions. |
 | Wi-Fi policies | Blacklist: listed networks bypass the phone proxy; whitelist: listed networks use it. Cellular policy is independent, and manual stop is preserved. |
@@ -56,9 +56,9 @@ Tap the image to open the full-resolution version. Use pinch-to-zoom on mobile.
 | Kernel capabilities | Compatible eBPF/TC, BTF, veth and network namespace support. Vendor restrictions can affect operation. |
 | Verified device | OnePlus 13 / PJZ110, Android 17 / SDK 37. |
 | Verified kernel | `6.6.118-android15` AGKI, SELinux Enforcing. |
-| Validated version | Module `v0.1.0-alpha6`, core `3.1.0-android-ksu.5`. |
+| Validated version | Module `v0.1.0-alpha7`, core `3.1.0-android-ksu.6`. |
 
-alpha6 adds Wi-Fi blacklist/whitelist policies and an independent policy for non-Wi-Fi networks. Matching direct networks release the data plane while keeping the dashboard available; recovery respects the user’s saved runtime intent. Device tests cover list matches and misses, repeated Wi-Fi/5G transitions, manual stop and deferred start. Ordinary hotspot tests from alpha5 and cold-boot results from alpha4 remain separate; cold boot was not repeated for alpha6.
+alpha7 adds a native Android manager and a short-lived session interface restricted to local root clients. Device tests cover existing-data access, native node import/edit, policy saving, runtime controls, the embedded advanced panel and Wi-Fi/5G transitions. Historical test results remain separate; cold boot was not repeated for alpha7.
 
 Vendor restrictions prevent cgroup attachment on the verified device, so avoid `pname()` process-name routing. Validation does not cover every UDP/QUIC or IPv6 scenario, other devices, Play Store installation flows or purchases. See [validation details](android/docs/VALIDATION.md).
 
@@ -68,7 +68,9 @@ Vendor restrictions prevent cgroup attachment on the verified device, so avoid `
 
 Download the ARM64 ZIP from the [latest release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest), install it through KernelSU, then reboot.
 
-Currently validated asset: [`DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha6/DaedNext-KernelSU-v0.1.0-alpha6-arm64.zip). Releases distribute the installation ZIP only.
+Currently validated asset: [`DaedNext-KernelSU-v0.1.0-alpha7-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha7/DaedNext-KernelSU-v0.1.0-alpha7-arm64.zip). Releases distribute the installation ZIP only.
+
+The same ZIP includes `manager/DaedNext-Manager.apk`. Extract and install it, grant **DaedNext** superuser access in KernelSU, then open the app. Existing accounts, nodes, subscriptions and Wi-Fi policies are retained. The module does not install the app automatically. See the [Android manager guide](android/manager/README.md).
 
 Stop other transparent proxy cores or VPNs before installation. The module checks for conflicting processes, but that check does not cover every possible competing proxy.
 

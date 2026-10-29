@@ -21,3 +21,4 @@
 /android/module/defaults/daed.db*
 /android/module/build-info.json
 /android/module/SHA256SUMS
+/android/module/manager/*.apk

@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.0-alpha7 — 2026-10-29
+
+- 新增 DaedNext Manager v0.1.0：原生仪表盘、节点、订阅、网络和设置页面，支持常用模块管理操作。
+- 在 App 内嵌现有高级面板，管理策略组、节点选择、DNS 与路由；不暴露 Root JavaScript 桥，仅允许本机服务地址。
+- 新增 Root 本地 socket 的 `manager-session` 会话签发，沿用现有用户，令牌有效期 10 分钟；HTTP 不开放该操作，不返回密码或签名密钥。
+- 保留代理启用意图及 Wi-Fi 黑白名单语义；App 通过模块接口修改配置，不直接写数据库。
+- ZIP 内附 `manager/DaedNext-Manager.apk`，需手动安装与 Root 授权。Release 继续只发布 ZIP。
+- 增加无需 Gradle 的原生构建脚本和无签名密钥的 CI 编译检查，覆盖更新沿用本地签名身份。
+- 核心更新为 `3.1.0-android-ksu.6`。
+
 ## v0.1.0-alpha6 — 2026-10-27
 
 - 新增 Wi-Fi 黑名单、白名单与独立的非 Wi-Fi 网络代理开关；新安装默认关闭且名单为空。

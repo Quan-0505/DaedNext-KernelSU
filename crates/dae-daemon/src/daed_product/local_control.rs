@@ -225,6 +225,12 @@ fn dispatch_local_control_stream(
 fn handle_local_control_request(app: &AppState, request: &Value) -> Value {
     match request.get("op").and_then(Value::as_str) {
         Some(LOCAL_CONTROL_OP_STATUS) => handle_local_control_status(app),
+        // dispatch_local_control_stream checks SO_PEERCRED UID 0 before this
+        // handler; the TCP API never exposes this operation.
+        Some("manager-session") => {
+            dae_product_control::auth_crypto::local_manager_session(&app.state)
+                .unwrap_or_else(|error| json!({"ok":false,"error":error.to_string()}))
+        }
         Some("network-policy") => {
             let Some(direct) = request.get("direct").and_then(Value::as_bool) else {
                 return json!({"ok":false,"error":"network-policy requires a boolean direct field"});
