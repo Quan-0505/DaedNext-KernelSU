@@ -7,4 +7,12 @@
         <item name="android:windowLightNavigationBar">false</item>
         <item name="android:windowBackground">#090A10</item>
     </style>
+    <style name="AppThemeLight" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#6352A3</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowBackground">#F5F4F0</item>
+    </style>
 </resources>

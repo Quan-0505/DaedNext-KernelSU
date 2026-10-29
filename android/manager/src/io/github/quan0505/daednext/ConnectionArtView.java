@@ -9,9 +9,10 @@ final class ConnectionArtView extends View {
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final boolean enabled;
     private final boolean bypass;
+    private final boolean light;
 
-    ConnectionArtView(Context context, boolean enabled, boolean bypass) {
-        super(context); this.enabled = enabled; this.bypass = bypass;
+    ConnectionArtView(Context context, boolean enabled, boolean bypass, boolean light) {
+        super(context); this.enabled = enabled; this.bypass = bypass; this.light = light;
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);
     }
 
@@ -26,7 +27,7 @@ final class ConnectionArtView extends View {
         paint.setStyle(Paint.Style.FILL);
         paint.setAlpha(255);
         paint.setShader(new RadialGradient(x,y,radius*2.25f,
-            new int[]{enabled?0x454259c5:0x183c4660,0x132f3a8c,0x00000000},
+            new int[]{light?0x387e82cf:(enabled?0x454259c5:0x183c4660),light?0x147c92d9:0x132f3a8c,0x00000000},
             new float[]{0,.5f,1},Shader.TileMode.CLAMP));
         canvas.drawCircle(x,y,radius*2.25f,paint);
         paint.setShader(null);
@@ -35,7 +36,7 @@ final class ConnectionArtView extends View {
         for(int i=0;i<24;i++) {
             double a=i*2.39996323;
             float distance=radius*(1.35f+(i%7)*.13f);
-            paint.setColor(i%4==0?0x99b7c3ff:0x375f709e);
+            paint.setColor(light?(i%4==0?0x806c68a5:0x406e719e):(i%4==0?0x99b7c3ff:0x375f709e));
             canvas.drawCircle(x+(float)Math.cos(a)*distance*1.35f,
                 y+(float)Math.sin(a)*distance*.73f, i%4==0?1.6f:1f,paint);
         }
@@ -84,7 +85,7 @@ final class ConnectionArtView extends View {
         // A small foreground orbit adds depth without copying reference artwork.
         canvas.save();canvas.rotate(-21,x,y);
         paint.setShader(new LinearGradient(orbit.left,y,orbit.right,y,
-            new int[]{0x009fb6f9,0xc0bddaff,0x0093aaff},null,Shader.TileMode.CLAMP));
+            light?new int[]{0x007066ac,0xb07875b3,0x008ea4cf}:new int[]{0x009fb6f9,0xc0bddaff,0x0093aaff},null,Shader.TileMode.CLAMP));
         canvas.drawArc(orbit,12,140,false,paint);paint.setShader(null);canvas.restore();
         paint.setStyle(Paint.Style.FILL);
     }

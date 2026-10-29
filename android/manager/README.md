@@ -2,7 +2,7 @@
 
 原生 Android 管理器，与 DaedNext KernelSU 模块共同工作。交互分工参考 [NetProxy Android Manager](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)，客户端与模块接口独立实现，未复制其 UI 或业务源码。
 
-当前版本 **0.1.1**。视觉参考 [Opal](https://opalapp.com/)，采用暗色背景、蓝紫连接光核、胶囊按钮和原生线条导航。图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。
+当前源码版本 **0.1.2**，已在一加 13 覆盖安装验证。新增「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。已发布的 alpha7 ZIP 内仍为 Manager 0.1.1。
 
 ## 安装
 
@@ -47,7 +47,7 @@ $env:ANDROID_HOME = 'C:\Android\sdk'
 python android/manager/build.py
 ```
 
-输出 `android/dist/DaedNext-Manager-v0.1.1.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
+输出 `android/dist/DaedNext-Manager-v0.1.2.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
 
 发布签名证书 SHA256：`e2d6b055b318f5a647ba81f2fdfeecabca7442af393460f13fb21310c5af3312`。
 

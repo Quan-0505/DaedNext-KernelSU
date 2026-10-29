@@ -31,6 +31,7 @@ public final class MainActivity extends Activity {
     private final List<View> actions = new ArrayList<>();
     private boolean busy, foreground, reading, wifiDraft;
     private int page, generation;
+    private Appearance appearance;
     private int ink, muted, background, card, border, accent;
     private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置"};
     private final Runnable ticker = new Runnable() { public void run() {
@@ -38,16 +39,11 @@ public final class MainActivity extends Activity {
     }};
 
     @Override public void onCreate(Bundle saved) {
-        setTheme(R.style.AppTheme);
+        appearance=new Appearance(this); appearance.apply(this);
         super.onCreate(saved);
-        ink = Color.parseColor("#F6F5FA");
-        muted = Color.parseColor("#9696A6");
-        background = Color.parseColor("#090A10");
-        card = Color.parseColor("#171820");
-        border = Color.parseColor("#292A36");
-        accent = Color.parseColor("#B4AEFF");
-        getWindow().setStatusBarColor(background); getWindow().setNavigationBarColor(background);
-        getWindow().getDecorView().setSystemUiVisibility(0);
+        ink=appearance.ink; muted=appearance.muted; background=appearance.background;
+        card=appearance.card; border=appearance.border; accent=appearance.accent;
+        appearance.bars(this);
         LinearLayout root = new LinearLayout(this); root.setOrientation(1); root.setBackgroundColor(background);
         root.setFitsSystemWindows(true); setContentView(root);
         LinearLayout header = column(); header.setPadding(dp(24), dp(12), dp(24), dp(3));
@@ -62,10 +58,11 @@ public final class MainActivity extends Activity {
         scroll = new ScrollView(this); scroll.setFillViewport(true);
         content = column(); content.setPadding(dp(20), dp(4), dp(20), dp(16)); scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        nav = row(); nav.setPadding(dp(5), dp(7), dp(5), dp(7)); nav.setBackground(shape(0xff1b1c25,28));
+        nav = row(); nav.setPadding(dp(5), dp(7), dp(5), dp(7)); nav.setBackground(shape(appearance.nav,28));
         LinearLayout.LayoutParams navParams=new LinearLayout.LayoutParams(-1,-2);navParams.setMargins(dp(18),dp(5),dp(18),dp(12));
-        root.addView(nav,navParams); buildNav(); showPage(0);
+        root.addView(nav,navParams); buildNav(); showPage(saved==null?0:saved.getInt("page",0));
     }
+    @Override protected void onSaveInstanceState(Bundle out) { out.putInt("page",page); super.onSaveInstanceState(out); }
     @Override protected void onResume() { super.onResume(); foreground = true; main.removeCallbacks(ticker); main.post(ticker); }
     @Override protected void onPause() { foreground = false; main.removeCallbacks(ticker); super.onPause(); }
     @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); worker.shutdownNow(); api.clear(); super.onDestroy(); }
@@ -86,8 +83,8 @@ public final class MainActivity extends Activity {
         Button b = new Button(this); b.setText(title); b.setTextSize(14); b.setAllCaps(false);
         b.setMinHeight(0);b.setMinimumHeight(0);b.setPadding(dp(12),0,dp(12),0);b.setGravity(Gravity.CENTER);
         b.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));b.setStateListAnimator(null);
-        b.setTextColor(primary ? 0xff101119 : ink);
-        b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(primary?0x16000000:0x18ffffff),shape(primary ? 0xfff4f3fa : 0xff242630, 28),null));
+        b.setTextColor(primary ? appearance.primaryInk : ink);
+        b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(appearance.light?0x143f315d:0x18ffffff),shape(primary ? appearance.primary : appearance.control, 28),null));
         LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, dp(49)); p.topMargin = dp(10); parent.addView(b, p);
         b.setEnabled(!busy); b.setOnClickListener(v -> { if (!busy) action.run(); }); actions.add(b); return b;
     }
@@ -103,8 +100,8 @@ public final class MainActivity extends Activity {
         for (int i=0;i<pages.length;i++) {
             final int index=i; LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
-            if(i==page)iconFrame.setBackground(shape(0xff303044,13));
-            NavIconView icon=new NavIconView(this,i,i==page?0xffd2ceff:0xff858694);
+            if(i==page)iconFrame.setBackground(shape(appearance.selected,13));
+            NavIconView icon=new NavIconView(this,i,i==page?accent:muted);
             android.widget.FrameLayout.LayoutParams iconParams=new android.widget.FrameLayout.LayoutParams(dp(23),dp(23),Gravity.CENTER);iconFrame.addView(icon,iconParams);
             item.addView(iconFrame,new LinearLayout.LayoutParams(dp(42),dp(31)));
             TextView label=text(pages[i].equals("仪表盘")?"首页":pages[i],10,i==page?ink:muted); item.addView(label);
@@ -129,7 +126,7 @@ public final class MainActivity extends Activity {
     }
     private void error(Exception error) {
         String message=error.getMessage(); if (message==null || message.isEmpty()) message="操作失败，请检查服务状态";
-        notice.setText(message); notice.setTextColor(0xffff9d98);
+        notice.setText(message); notice.setTextColor(appearance.danger);
         new AlertDialog.Builder(this).setTitle("需要处理").setMessage(message).setPositiveButton("知道了",null).show();
     }
     interface Job<T> { T run() throws Exception; }
@@ -158,10 +155,12 @@ public final class MainActivity extends Activity {
             if(value!=null && !value.isNull("pid") && selectedPage==0)try{sample=api.get("runtime/overview");}catch(Exception ignored){}
             JSONObject result=value,statistics=sample; Exception problem=failure;
             main.post(()->{reading=false;if(isFinishing()||isDestroyed())return;
-                if(problem!=null){ notice.setText(problem.getMessage()); notice.setTextColor(0xffff9d98); if(force)error(problem); return; }
+                if(problem!=null){ notice.setText(problem.getMessage()); notice.setTextColor(appearance.danger); if(force)error(problem); return; }
+                boolean firstStatus=status==null;
                 status=result;if(selectedPage==0)metrics=statistics;
                 notice.setText(serviceOn()?"本机服务已连接":"后台服务未启动");notice.setTextColor(muted);
                 if(page==0 && epoch==generation && !busy){content.removeAllViews();actions.clear();dashboard();}
+                else if(page==4 && firstStatus && epoch==generation && !busy){content.removeAllViews();actions.clear();settings();}
             });
         });
     }
@@ -171,7 +170,7 @@ public final class MainActivity extends Activity {
         JSONObject r=ready(); boolean wanted=r.optBoolean("runtimeRequired"), active=r.optBoolean("runtimeRunning"), bypass=r.optBoolean("networkPolicyPaused");
         LinearLayout hero=column();hero.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams heroParams=new LinearLayout.LayoutParams(-1,-2);heroParams.bottomMargin=dp(18);content.addView(hero,heroParams);
-        hero.addView(new ConnectionArtView(this,wanted,bypass),new LinearLayout.LayoutParams(-1,dp(175)));
+        hero.addView(new ConnectionArtView(this,wanted,bypass,appearance.light),new LinearLayout.LayoutParams(-1,dp(175)));
         String state=status==null?"等待连接":!serviceOn()?"服务未启动":bypass&&wanted?"已自动直连":active?"代理运行中":wanted?"正在恢复连接":"代理已暂停";
         TextView title=text(state,29,ink);title.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));title.setGravity(Gravity.CENTER);hero.addView(title);
         TextView detail=text(bypass&&wanted?"当前 Wi-Fi 使用上游网络\n离开后，手机代理会自动接管。":active?"连接已由 DaedNext 接管\n按你的规则，自由切换出口。":"保留你的节点与规则\n启用后，按网络策略自动连接。",13,muted);
@@ -182,8 +181,8 @@ public final class MainActivity extends Activity {
         },s->{status=s;showPage(0);}));
         LinearLayout network=card("");JSONObject w=status==null?null:status.optJSONObject("wifiPolicy");
         LinearLayout networkRow=row();network.addView(networkRow);
-        android.widget.FrameLayout wifiIcon=new android.widget.FrameLayout(this);wifiIcon.setBackground(shape(0xff252836,15));
-        wifiIcon.addView(new NavIconView(this,3,0xffbbb7fc),new android.widget.FrameLayout.LayoutParams(dp(25),dp(25),Gravity.CENTER));
+        android.widget.FrameLayout wifiIcon=new android.widget.FrameLayout(this);wifiIcon.setBackground(shape(appearance.control,15));
+        wifiIcon.addView(new NavIconView(this,3,accent),new android.widget.FrameLayout.LayoutParams(dp(25),dp(25),Gravity.CENTER));
         networkRow.addView(wifiIcon,new LinearLayout.LayoutParams(dp(44),dp(44)));
         LinearLayout networkText=column();LinearLayout.LayoutParams networkParams=new LinearLayout.LayoutParams(0,-2,1);networkParams.leftMargin=dp(13);networkRow.addView(networkText,networkParams);
         String iface=status==null?"":status.optString("interface");
@@ -194,8 +193,8 @@ public final class MainActivity extends Activity {
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
         LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
-        metric(rates,"下载速度",metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s",0xffb8c8ff,true);
-        metric(rates,"上传速度",metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s",0xffd0b7fb,false);
+        metric(rates,"下载速度",metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s",appearance.light?0xff405d97:0xffb8c8ff,true);
+        metric(rates,"上传速度",metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s",appearance.light?0xff795399:0xffd0b7fb,false);
         TextView scope=text(bypass&&wanted?"直连期间，Wi-Fi 上游流量不计入这里。":"仅统计由手机代理转发的流量。",10,muted);scope.setPadding(dp(3),0,dp(3),dp(12));content.addView(scope);
 
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
@@ -243,7 +242,7 @@ public final class MainActivity extends Activity {
     private EditText field(LinearLayout parent,String label,String value,boolean multiline,boolean secret) {
         hint(parent,label);EditText input=new EditText(this);input.setTextColor(ink);input.setTextSize(15);input.setText(value);input.setHintTextColor(muted);
         input.setInputType(InputType.TYPE_CLASS_TEXT|(multiline?InputType.TYPE_TEXT_FLAG_MULTI_LINE:secret?InputType.TYPE_TEXT_VARIATION_PASSWORD:InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS));
-        input.setBackground(shape(0xff22232d,16));input.setPadding(dp(13),dp(13),dp(13),dp(13));
+        input.setBackground(shape(appearance.light?0xfff1eff5:0xff22232d,16));input.setPadding(dp(13),dp(13),dp(13),dp(13));
         input.setMinLines(multiline?3:1);LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(-1,-2);params.topMargin=dp(6);params.bottomMargin=dp(12);parent.addView(input,params);return input;
     }
     private void form(String title,LinearLayout fields,Runnable save) {
@@ -287,7 +286,7 @@ public final class MainActivity extends Activity {
                 hint(c,"最近更新  "+localTime(sub.optString("updatedAt","")));
                 button(c,"更新订阅",true,()->task("正在更新订阅，请稍候…",()->api.post("subscriptions/"+sub.optLong("id")+"/refresh",new JSONObject()),response->{showPage(2);if(response.has("refreshError")&&!response.isNull("refreshError"))textDialog("订阅更新结果",response.opt("refreshError").toString());else Toast.makeText(this,"订阅更新完成",Toast.LENGTH_SHORT).show();}));
                 Button[] toolsRow=paired(c,"编辑订阅",()->subscriptionForm(sub),"删除订阅",()->confirm("删除订阅","将删除此订阅及其节点，请确认相关策略组仍有可用节点。",()->task("正在删除订阅…",()->api.delete("subscriptions/"+sub.optLong("id")),response->showPage(2))));
-                toolsRow[1].setTextColor(0xffff9ba9);
+                toolsRow[1].setTextColor(appearance.danger);
             }
         });
     }
@@ -339,9 +338,15 @@ public final class MainActivity extends Activity {
     }
     private String join(JSONArray values){if(values==null)return "";StringBuilder out=new StringBuilder();for(int i=0;i<values.length();i++){if(i>0)out.append('\n');out.append(values.optString(i));}return out.toString();}
     private void settings() {
+        LinearLayout look=card("外观");
+        hint(look,"云雾浅色与星夜深色，也可以随系统自动切换。");
+        button(look,Appearance.LABELS[Appearance.selected(this)],false,()->new AlertDialog.Builder(this)
+            .setTitle("选择外观").setSingleChoiceItems(Appearance.LABELS,Appearance.selected(this),(dialog,index)->{
+                dialog.dismiss(); if(index!=Appearance.selected(this)){Appearance.save(this,index);recreate();}
+            }).setNegativeButton("取消",null).show());
         LinearLayout service=card("模块服务");hint(service,"暂停代理会保留管理功能；停止服务会关闭整个代理后台。");
         paired(service,"启动服务",()->serviceCommand("start"),"重启服务",()->confirm("重启服务","代理连接会短暂中断，配置保留。",()->serviceCommand("restart")));
-        button(service,"停止服务",false,()->confirm("停止服务","管理接口与手机代理将停止，之后可从 App 再次启动。",()->serviceCommand("stop"))).setTextColor(0xffff9ba9);
+        button(service,"停止服务",false,()->confirm("停止服务","管理接口与手机代理将停止，之后可从 App 再次启动。",()->serviceCommand("stop"))).setTextColor(appearance.danger);
         LinearLayout options=card("兼容与自启");
         option(options,"开机启动",status!=null&&status.optBoolean("autostart"),"autostart");
         option(options,"Google 服务联网兼容",status!=null&&status.optBoolean("googleNetworkCompat"),"google-network");
@@ -354,7 +359,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.1"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.2"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     private void option(LinearLayout parent,String title,boolean checked,String command) {
         Switch option=new Switch(this);option.setText(title);option.setTextColor(ink);option.setChecked(checked);option.setPadding(0,dp(10),0,dp(10));parent.addView(option);actions.add(option);
