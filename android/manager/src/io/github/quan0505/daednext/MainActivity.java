@@ -104,7 +104,9 @@ public final class MainActivity extends Activity {
             NavIconView icon=new NavIconView(this,i,i==page?accent:muted);
             android.widget.FrameLayout.LayoutParams iconParams=new android.widget.FrameLayout.LayoutParams(dp(23),dp(23),Gravity.CENTER);iconFrame.addView(icon,iconParams);
             item.addView(iconFrame,new LinearLayout.LayoutParams(dp(42),dp(31)));
-            TextView label=text(pages[i].equals("仪表盘")?"首页":pages[i],10,i==page?ink:muted); item.addView(label);
+            TextView label=text(pages[i].equals("仪表盘")?"首页":pages[i],10,i==page?ink:muted);
+            label.setGravity(Gravity.CENTER);
+            item.addView(label,new LinearLayout.LayoutParams(-1,-2));
             item.setContentDescription(pages[i]); item.setOnClickListener(v -> {
                 if (busy || index==page) return;
                 if (page==3 && wifiDraft) new AlertDialog.Builder(this).setTitle("尚未保存 Wi-Fi 设置")
