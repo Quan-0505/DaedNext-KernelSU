@@ -22,6 +22,7 @@ public final class MainActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private LinearLayout content, nav;
+    private ScrollView scroll;
     private TextView pageTitle, notice;
     private AlertDialog formDialog;
     private JSONObject status, wifiConfig;
@@ -56,7 +57,7 @@ public final class MainActivity extends Activity {
         pageTitle = text(pages[0], 29, ink); pageTitle.setTypeface(null, Typeface.BOLD); header.addView(pageTitle);
         root.addView(header);
         notice = text("正在连接本机模块…", 13, muted); notice.setPadding(dp(22), dp(4), dp(22), dp(8)); root.addView(notice);
-        ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true);
+        scroll = new ScrollView(this); scroll.setFillViewport(true);
         content = column(); content.setPadding(dp(18), dp(8), dp(18), dp(24)); scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         nav = row(); nav.setPadding(dp(8), dp(8), dp(8), dp(10)); nav.setBackgroundColor(card);
@@ -113,6 +114,7 @@ public final class MainActivity extends Activity {
         else if (page==2) loadSubscriptions();
         else if (page==3) loadWifi();
         else settings();
+        scroll.post(()->scroll.scrollTo(0,0));
     }
     private void error(Exception error) {
         String message=error.getMessage(); if (message==null || message.isEmpty()) message="操作失败，请检查服务状态";

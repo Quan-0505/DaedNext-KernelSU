@@ -20,11 +20,11 @@
 
 本轮未执行手机冷启动，未扩展所有 UDP/QUIC、IPv6 及其他机型的验收范围。原有 alpha6 单次 DNS 异常的根因未在本次 App 开发中定位，不声明已经修复。设备日志、临时测试 APK、截图、签名密钥及数据库均不进入公开源码。
 
-alpha7 ZIP SHA256：`64953b2e53ed362c54e11c10758a6a901e2ab674c008cb66cd960417ff74b391`。
+alpha7 ZIP SHA256：`e01653d0f855f77456eb801f80d5c24150c3c73b5783a365a38f0876d08f305a`。
 
 alpha7 核心 SHA256：`351b9b65410d603e6d2082f390e86660f59f6a4fcb9e79b549900349399c7c7b`。
 
-Manager 0.1.0 APK SHA256：`4ad28f71a58b97eaa416f86dfb2a71b18a07fd929b4d15f485d822e66554085a`。
+Manager 0.1.0 APK SHA256：`9ca0a8406548d6823e39b9dee369b53ac7c46befc35d5d1ff42992fe37a845f9`。
 
 ## alpha6 — 2026-10-27
 
