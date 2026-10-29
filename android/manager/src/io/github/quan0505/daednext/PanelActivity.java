@@ -19,9 +19,9 @@ public final class PanelActivity extends Activity {
     }
     @Override public void onCreate(Bundle saved) {
         super.onCreate(saved);
-        LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setFitsSystemWindows(true);
-        Button back=new Button(this);back.setText("‹ 返回 DaedNext");back.setAllCaps(false);back.setOnClickListener(v->finish());root.addView(back);
-        web=new WebView(this);root.addView(web,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
+        LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setFitsSystemWindows(true);root.setBackgroundColor(0xff090a10);
+        Button back=new Button(this);back.setText("‹ 返回 DaedNext");back.setAllCaps(false);back.setTextColor(0xfff6f5fa);back.setBackgroundColor(0xff171820);back.setStateListAnimator(null);back.setOnClickListener(v->finish());root.addView(back);
+        web=new WebView(this);web.setBackgroundColor(0xff090a10);root.addView(web,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
         web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(false);
         web.getSettings().setGeolocationEnabled(false);web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
@@ -39,7 +39,7 @@ public final class PanelActivity extends Activity {
         worker.execute(()->{
             try {
                 String token=new ApiClient(new ModuleClient()).panelSession();
-                String html="<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><script>localStorage.setItem('token',"+JSONObject.quote(token)+");location.replace('http://127.0.0.1:2023/#"+route+"');</script>";
+                String html="<!doctype html><meta name='viewport' content='width=device-width,initial-scale=1'><script>localStorage.setItem('APP_STATEthemeMode',JSON.stringify('dark'));localStorage.setItem('token',"+JSONObject.quote(token)+");location.replace('http://127.0.0.1:2023/#"+route+"');</script>";
                 // Use a distinct path: a hash-only navigation from the root
                 // bootstrap document would never fetch the real SPA HTML.
                 runOnUiThread(()->{if(!isFinishing())web.loadDataWithBaseURL("http://127.0.0.1:2023/manager-bootstrap",html,"text/html","UTF-8",null);});

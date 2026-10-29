@@ -11,6 +11,7 @@ from pathlib import Path
 import secrets
 import subprocess
 import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parent
 parser = argparse.ArgumentParser(description=__doc__)
@@ -94,7 +95,8 @@ run(binary(TOOLS, 'zipalign'), '-P', '16', '-f', '4', unsigned, aligned)
 if args.unsigned:
     print(json.dumps({'unsignedApk': str(aligned), 'bytes': aligned.stat().st_size}))
     raise SystemExit(0)
-apk = DIST / 'DaedNext-Manager-v0.1.0.apk'
+version = ET.parse(ROOT / 'AndroidManifest.xml').getroot().get('{http://schemas.android.com/apk/res/android}versionName')
+apk = DIST / f'DaedNext-Manager-v{version}.apk'
 run(binary(JAVA, 'java'), '-jar', TOOLS / 'lib/apksigner.jar', 'sign', '--ks', key,
     '--ks-key-alias', 'daednext', '--ks-pass', 'file:' + str(password_file),
     '--out', apk, aligned)
