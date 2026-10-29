@@ -2,7 +2,7 @@
 
 原生 Android 管理器，与 DaedNext KernelSU 模块共同工作。交互分工参考 [NetProxy Android Manager](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)，客户端与模块接口独立实现，未复制其 UI 或业务源码。
 
-当前源码版本 **0.1.2**，已在一加 13 覆盖安装验证。新增「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。已发布的 alpha7 ZIP 内仍为 Manager 0.1.1。
+当前源码版本 **0.1.3**，已在一加 13 覆盖安装验证。首页和设置页提供「配置」「群组」快捷入口，直接定位对应工作区；节点页「策略组」也直接进入群组。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。已发布的 alpha7 ZIP 内仍为 Manager 0.1.1。
 
 ## 安装
 
@@ -19,11 +19,11 @@ App 不附带代理核心，不能脱离模块提供代理。安装或卸载 App
 
 | 页面 | 操作 |
 | --- | --- |
-| 仪表盘 | 代理启用／暂停、当前 Wi-Fi 策略、进程状态、流量和内存概况。 |
+| 仪表盘 | 代理启用／暂停、当前 Wi-Fi 策略、进程状态、流量和内存概况，配置／群组快捷入口。 |
 | 节点 | 独立及订阅节点列表、延迟记录、单节点测速、链接导入、名称与链接编辑、删除。 |
 | 订阅 | 添加、编辑、更新、删除及自动更新状态。地址默认掩码显示。 |
 | 网络 | Wi-Fi 黑白名单分别编辑、添加当前 Wi-Fi、独立的非 Wi-Fi 代理选项。 |
-| 设置 | 后台服务启停、开机启动、Google 联网兼容、一致性备份、日志。 |
+| 设置 | 配置／群组快捷入口、外观、后台服务启停、开机启动、Google 联网兼容、一致性备份、日志。 |
 | 高级面板 | 内嵌现有 DaedNext 面板，管理策略组、节点选择、DNS、路由及完整配置。 |
 
 “暂停代理”记录用户停用意图，保留后台管理服务；“停止服务”关闭整个模块服务。Wi-Fi 策略直连期间启用代理只记录启用意图，待离开直连网络后恢复接管。
@@ -47,7 +47,7 @@ $env:ANDROID_HOME = 'C:\Android\sdk'
 python android/manager/build.py
 ```
 
-输出 `android/dist/DaedNext-Manager-v0.1.2.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
+输出 `android/dist/DaedNext-Manager-v0.1.3.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
 
 发布签名证书 SHA256：`e2d6b055b318f5a647ba81f2fdfeecabca7442af393460f13fb21310c5af3312`。
 

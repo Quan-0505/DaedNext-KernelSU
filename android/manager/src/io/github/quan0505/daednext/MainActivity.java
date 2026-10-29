@@ -194,6 +194,8 @@ public final class MainActivity extends Activity {
         TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription("网络策略");
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
+        workspaceEntries();
+
         LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
         metric(rates,"下载速度",metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s",appearance.light?0xff405d97:0xffb8c8ff,true);
         metric(rates,"上传速度",metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s",appearance.light?0xff795399:0xffd0b7fb,false);
@@ -216,10 +218,15 @@ public final class MainActivity extends Activity {
     }
     private static String bytes(double n) { if(Double.isNaN(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }
     private void panel(String path) { Intent intent=new Intent(this,PanelActivity.class);intent.putExtra("path",path);startActivity(intent); }
+    private void workspaceEntries() {
+        LinearLayout entries=card("配置与群组");
+        hint(entries,"管理核心参数、代理出口与自动优选策略。");
+        paired(entries,"配置",()->panel("/?panel=config"),"群组",()->panel("/?panel=group"));
+    }
     private JSONArray items(JSONObject j) { JSONArray a=j.optJSONArray("items");return a==null?new JSONArray():a; }
     private void loadNodes() {
         LinearLayout tools=card("节点管理");hint(tools,"导入节点、查看延迟，使用策略组管理代理出口。");
-        paired(tools,"导入节点链接",this::importNodes,"策略组",()->panel("/"));
+        paired(tools,"导入节点链接",this::importNodes,"策略组",()->panel("/?panel=group"));
         button(tools,"刷新节点 / 延迟",false,()->showPage(1));
         task("正在读取节点…",()->{
             JSONArray all=items(api.get("nodes")), subscribed=items(api.get("nodes?independent=false"));
@@ -340,6 +347,7 @@ public final class MainActivity extends Activity {
     }
     private String join(JSONArray values){if(values==null)return "";StringBuilder out=new StringBuilder();for(int i=0;i<values.length();i++){if(i>0)out.append('\n');out.append(values.optString(i));}return out.toString();}
     private void settings() {
+        workspaceEntries();
         LinearLayout look=card("外观");
         hint(look,"云雾浅色与星夜深色，也可以随系统自动切换。");
         button(look,Appearance.LABELS[Appearance.selected(this)],false,()->new AlertDialog.Builder(this)
@@ -361,7 +369,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.2"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.3"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     private void option(LinearLayout parent,String title,boolean checked,String command) {
         Switch option=new Switch(this);option.setText(title);option.setTextColor(ink);option.setChecked(checked);option.setPadding(0,dp(10),0,dp(10));parent.addView(option);actions.add(option);
