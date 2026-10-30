@@ -17,3 +17,5 @@
 Wi-Fi 黑白名单与移动数据策略见 [Wi-Fi 自动切换](docs/WIFI-POLICY.md)。
 
 原生 App、接口边界及签名维护见 [Android 管理器](manager/README.md)。
+
+跨机型能力接口与适配范围见 [设备适配接口](docs/DEVICE-ADAPTER.md)。源码已提供只读 `daenextctl capabilities`；它不是其他机型已兼容的认证。
