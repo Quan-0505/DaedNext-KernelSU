@@ -229,8 +229,6 @@ public final class MainActivity extends Activity {
         memoryValue=metric(resources,"内存占用","—",appearance.light?0xff80643d:0xffdcc394,false);
         TextView resourceScope=text("仅统计 DaedNext 服务，不含其他应用。",10,muted);resourceScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(resourceScope);
 
-        workspaceEntries();
-
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
         LinearLayout advancedText=column();advancedRow.addView(advancedText,new LinearLayout.LayoutParams(0,-2,1));
         advancedText.addView(text("高级管理面板",16,ink));hint(advancedText,"策略组、DNS 与路由规则");advancedRow.addView(text("↗",22,muted));
@@ -278,21 +276,9 @@ public final class MainActivity extends Activity {
     }
     private static String bytes(double n) { if(Double.isNaN(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }
     private void panel(String path) { Intent intent=new Intent(this,PanelActivity.class);intent.putExtra("path",path);startActivity(intent); }
-    private void workspaceEntries() {
-        LinearLayout entries=card("资源工作台");hint(entries,"把连接的每一层，都安排妥当。");
-        for(int i=0;i<RESOURCE_NAMES.length;i+=2){final int left=i,right=i+1;LinearLayout line=row();entries.addView(line);
-            resourceTile(line,left,()->openWorkspace(RESOURCE_PAGES[left]));resourceTile(line,right,()->openWorkspace(RESOURCE_PAGES[right]));}
-    }
     private void openWorkspace(int target){returnPage=page==9?9:page<5?page:9;showPage(target);}
     private int resourceIcon(int index){return new int[]{4,5,6,7,1,2}[index];}
     private int resourceColor(int index){return appearance.light?new int[]{0xff6352a3,0xff3e7d78,0xff486e9f,0xff805d86,0xff6070a3,0xff91734a}[index]:new int[]{0xffb4aeff,0xff8fcac1,0xff9bb8e5,0xffd1b0d8,0xffabb5e5,0xffdcc394}[index];}
-    private void resourceTile(LinearLayout line,int index,Runnable action){
-        LinearLayout tile=row();tile.setPadding(dp(12),dp(11),dp(12),dp(11));tile.setBackground(shape(appearance.control,18));
-        tile.addView(new NavIconView(this,resourceIcon(index),resourceColor(index)),new LinearLayout.LayoutParams(dp(20),dp(20)));
-        TextView title=text(RESOURCE_NAMES[index],14,ink);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.leftMargin=dp(9);tile.addView(title,textParams);
-        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(49),1);p.topMargin=dp(9);p.setMarginEnd(dp(index%2==0?5:0));p.setMarginStart(dp(index%2==0?0:5));line.addView(tile,p);
-        tile.setContentDescription(RESOURCE_NAMES[index]);tile.setOnClickListener(v->{if(!busy)action.run();});actions.add(tile);
-    }
     private void resourceHeading(int index,String note){
         LinearLayout c=card("");LinearLayout title=row();c.addView(title);
         title.addView(new NavIconView(this,resourceIcon(index),resourceColor(index)),new LinearLayout.LayoutParams(dp(27),dp(27)));
@@ -462,7 +448,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.9"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.10"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
