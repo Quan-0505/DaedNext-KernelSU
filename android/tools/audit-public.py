@@ -1,15 +1,23 @@
 """Check tracked Android integration files before pushing public source."""
 from pathlib import Path
+import hashlib
 import re
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[2]
+# Reviewed UI source assets only; device screenshots and other PNGs remain denied.
+SOURCE_ARTWORK = {
+    'manager/res/drawable-nodpi/goose_core_light.png': '2a39a8ed2e4123676316525c9265bcb2398dcac8e8f38c413b05d178a6571bcf',
+    'manager/res/drawable-nodpi/goose_core_dark.png': '83dcc11347140303e44860e471d7f70886baad3b05dc906e70105c0db26f7941',
+}
 files = subprocess.check_output(['git', 'ls-files', '-z', 'android'], cwd=ROOT).decode().split('\0')
 errors = []
 for name in filter(None, files):
     p = ROOT / name
     relative = p.relative_to(ROOT / 'android')
-    if any(part in ('private', 'backups', 'validation', '.build', 'dist') for part in relative.parts) or p.suffix in ('.db', '.sqlite', '.pcap', '.log', '.png', '.apk', '.p12', '.jks', '.keystore'):
+    reviewed_art = (relative.as_posix() in SOURCE_ARTWORK and p.is_file()
+                    and hashlib.sha256(p.read_bytes()).hexdigest() == SOURCE_ARTWORK[relative.as_posix()])
+    if any(part in ('private', 'backups', 'validation', '.build', 'dist') for part in relative.parts) or (p.suffix in ('.db', '.sqlite', '.pcap', '.log', '.png', '.apk', '.p12', '.jks', '.keystore') and not reviewed_art):
         errors.append((name, 'private/generated artifact tracked'))
     if not p.is_file():
         continue

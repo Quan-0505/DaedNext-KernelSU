@@ -19,4 +19,3 @@ Adapt the reference LEFT panel material for the light theme: milky translucent p
 ### 深色追加
 
 Adapt the reference RIGHT panel material for the dark theme: rich blue/violet clear glass, cyan rim illumination, opaline white goose, dark transparent interior, restrained premium glow.
-
