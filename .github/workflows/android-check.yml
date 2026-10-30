@@ -46,5 +46,6 @@ jobs:
         run: |
           export JAVA_HOME="$JAVA_HOME_17_X64"
           python3 android/manager/test-text.py
+          python3 android/manager/test-l10n.py
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" 'platforms;android-35' 'build-tools;35.0.0' >/dev/null
           python3 android/manager/build.py --unsigned

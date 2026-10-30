@@ -1,6 +1,7 @@
 package io.github.quan0505.daednext;
 
 import android.app.*;
+import android.content.Context;
 import android.os.Bundle;
 import android.webkit.*;
 import android.widget.*;
@@ -17,11 +18,12 @@ public final class PanelActivity extends Activity {
     static boolean local(Uri uri) {
         return "http".equals(uri.getScheme()) && "127.0.0.1".equals(uri.getHost()) && uri.getPort()==2023 && uri.getUserInfo()==null;
     }
+    @Override protected void attachBaseContext(Context base){super.attachBaseContext(L10n.attach(base));}
     @Override public void onCreate(Bundle saved) {
         Appearance appearance=new Appearance(this);appearance.apply(this);
         super.onCreate(saved);appearance.bars(this);
         LinearLayout root=new LinearLayout(this);root.setOrientation(1);root.setFitsSystemWindows(true);root.setBackgroundColor(appearance.background);
-        Button back=new Button(this);back.setText("‹ 返回 DaedNext");back.setAllCaps(false);back.setTextColor(appearance.ink);back.setBackgroundColor(appearance.card);back.setStateListAnimator(null);back.setOnClickListener(v->finish());root.addView(back);
+        Button back=new Button(this);back.setText(L10n.tr("‹ 返回 DaedNext"));back.setAllCaps(false);back.setTextColor(appearance.ink);back.setBackgroundColor(appearance.card);back.setStateListAnimator(null);back.setOnClickListener(v->finish());root.addView(back);
         web=new WebView(this);web.setBackgroundColor(appearance.background);root.addView(web,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
         web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);
         web.getSettings().setAllowFileAccess(false);web.getSettings().setAllowContentAccess(false);

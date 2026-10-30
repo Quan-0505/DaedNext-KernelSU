@@ -51,6 +51,7 @@ public final class MainActivity extends Activity {
         if (foreground) { refreshStatus(false); main.postDelayed(this, 6000); }
     }};
 
+    @Override protected void attachBaseContext(Context base){super.attachBaseContext(L10n.attach(base));}
     @Override public void onCreate(Bundle saved) {
         appearance=new Appearance(this); appearance.apply(this);
         super.onCreate(saved);
@@ -65,10 +66,10 @@ public final class MainActivity extends Activity {
         brandRow.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         badge=text("Root",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
         badge.setOnClickListener(v->{if(page>=5||page==1||page==2)onBackPressed();});
-        pageTitle = text("你的连接", 31, ink); pageTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
+        pageTitle = text(L10n.tr("你的连接"), 31, ink); pageTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);titleParams.topMargin=dp(15);header.addView(pageTitle,titleParams);
         root.addView(header);
-        notice = text("正在连接本机服务…", 11, muted); notice.setPadding(dp(24), dp(2), dp(24), dp(6)); root.addView(notice);
+        notice = text(L10n.tr("正在连接本机服务…"), 11, muted); notice.setPadding(dp(24), dp(2), dp(24), dp(6)); root.addView(notice);
         scroll = new ScrollView(this); scroll.setFillViewport(true);
         content = column(); content.setPadding(dp(20), dp(4), dp(20), dp(16)); scroll.addView(content);
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
@@ -121,29 +122,28 @@ public final class MainActivity extends Activity {
     }
     private void buildNav() {
         nav.removeAllViews();
-        int[] destinations={0,9,3,4},icons={0,8,3,4};String[] labels={"首页","资源","智联","设置"};
+        int[] destinations={0,9,3,4},icons={0,8,3,4};String[] labels={L10n.tr("首页"),L10n.tr("资源"),L10n.tr("智联"),L10n.tr("设置")};
         for (int i=0;i<destinations.length;i++) {
             final int index=destinations[i];boolean selected=index==page||(index==0&&page==10)||(index==9&&(page==1||page==2||(page>=5&&page<=9)));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
-            if(selected)iconFrame.setBackground(shape(appearance.selected,13));
-            NavIconView icon=new NavIconView(this,icons[i],selected?accent:muted);
-            android.widget.FrameLayout.LayoutParams iconParams=new android.widget.FrameLayout.LayoutParams(dp(23),dp(23),Gravity.CENTER);iconFrame.addView(icon,iconParams);
-            item.addView(iconFrame,new LinearLayout.LayoutParams(dp(42),dp(31)));
+            DreamNavIconView icon=new DreamNavIconView(this,icons[i],selected,appearance.light);
+            android.widget.FrameLayout.LayoutParams iconParams=new android.widget.FrameLayout.LayoutParams(-1,-1,Gravity.CENTER);iconFrame.addView(icon,iconParams);
+            item.addView(iconFrame,new LinearLayout.LayoutParams(dp(52),dp(38)));
             TextView label=text(labels[i],10,selected?ink:muted);
             label.setGravity(Gravity.CENTER);
             item.addView(label,new LinearLayout.LayoutParams(-1,-2));
             item.setContentDescription(labels[i]); item.setOnClickListener(v -> {
                 if (busy || index==page) return;
-                if (page==3 && wifiDraft) new AlertDialog.Builder(this).setTitle("尚未保存 Wi-Fi 设置")
-                    .setMessage("离开将放弃当前修改。")
-                    .setPositiveButton("离开",(d,w)->showPage(index)).setNegativeButton("继续编辑",null).show();
+                if (page==3 && wifiDraft) new AlertDialog.Builder(this).setTitle(L10n.tr("尚未保存 Wi-Fi 设置"))
+                    .setMessage(L10n.tr("离开将放弃当前修改。"))
+                    .setPositiveButton(L10n.tr("离开"),(d,w)->showPage(index)).setNegativeButton(L10n.tr("继续编辑"),null).show();
                 else showPage(index);
             }); nav.addView(item,new LinearLayout.LayoutParams(0,-2,1));
         }
     }
     private void showPage(int target) {
-        page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?"你的连接":pages[page]); buildNav(); wifiDraft=false;
-        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1||page==2?"‹ 返回":"Root");
+        page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?L10n.tr("你的连接"):L10n.tr(pages[page])); buildNav(); wifiDraft=false;
+        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1||page==2?L10n.tr("‹ 返回"):"Root");
         if (page==0) dashboard();
         else if (page==1) loadNodes();
         else if (page==2) loadSubscriptions();
@@ -158,17 +158,17 @@ public final class MainActivity extends Activity {
         content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
     }
     private void error(Exception error) {
-        String message=error.getMessage(); if (message==null || message.isEmpty()) message="操作失败，请检查服务状态";
+        String message=L10n.tr(error.getMessage()); if (message==null || message.isEmpty()) message=L10n.tr("操作失败，请检查服务状态");
         if(message.contains("no user-defined routing outbound with a resolvable node link was found")) {
-            notice.setText("代理出口尚未配置完成");notice.setTextColor(appearance.danger);
-            new AlertDialog.Builder(this).setTitle("请先配置代理出口")
-                .setMessage("节点已导入，并不代表已接入代理路由。\n\n1. 资源 → 群组 → proxy → 管理成员，添加要使用的节点（或关联订阅）。\n2. 资源 → 路由，编辑当前已选方案，把兜底出口设为 proxy，或添加指向该群组的代理规则。\n3. 资源 → 配置 → 应用当前配置。\n\n若群组使用固定策略，请只保留一个候选节点。本提示不会自动修改你的节点、群组或路由。")
-                .setPositiveButton("配置群组",(dialog,which)->openWorkspace(6))
-                .setNeutralButton("配置路由",(dialog,which)->openWorkspace(8))
-                .setNegativeButton("稍后处理",null).show();return;
+            notice.setText(L10n.tr("代理出口尚未配置完成"));notice.setTextColor(appearance.danger);
+            new AlertDialog.Builder(this).setTitle(L10n.tr("请先配置代理出口"))
+                .setMessage(L10n.tr("节点已导入，并不代表已接入代理路由。\n\n1. 资源 → 群组 → proxy → 管理成员，添加要使用的节点（或关联订阅）。\n2. 资源 → 路由，编辑当前已选方案，把兜底出口设为 proxy，或添加指向该群组的代理规则。\n3. 资源 → 配置 → 应用当前配置。\n\n若群组使用固定策略，请只保留一个候选节点。本提示不会自动修改你的节点、群组或路由。"))
+                .setPositiveButton(L10n.tr("配置群组"),(dialog,which)->openWorkspace(6))
+                .setNeutralButton(L10n.tr("配置路由"),(dialog,which)->openWorkspace(8))
+                .setNegativeButton(L10n.tr("稍后处理"),null).show();return;
         }
         notice.setText(message); notice.setTextColor(appearance.danger);
-        new AlertDialog.Builder(this).setTitle("需要处理").setMessage(message).setPositiveButton("知道了",null).show();
+        new AlertDialog.Builder(this).setTitle(L10n.tr("需要处理")).setMessage(message).setPositiveButton(L10n.tr("知道了"),null).show();
     }
     interface Job<T> { T run() throws Exception; }
     interface Done<T> { void accept(T value) throws Exception; }
@@ -183,7 +183,7 @@ public final class MainActivity extends Activity {
                 busy=false; for(View v:actions)v.setEnabled(true);
                 if(problem!=null) { if(proxySwitchPending){proxySwitchPending=false;if(connectionArt!=null)connectionArt.commit(ready().optBoolean("runtimeRequired"),ready().optBoolean("networkPolicyPaused"));updateDashboard();}error(problem); return; }
                 if(formDialog!=null){formDialog.dismiss();formDialog=null;}
-                notice.setText("已与本机服务同步"); notice.setTextColor(muted);
+                notice.setText(L10n.tr("已与本机服务同步")); notice.setTextColor(muted);
                 if(epoch==generation)try{done.accept(value);}catch(Exception e){error(e);}
             });
         });
@@ -200,7 +200,7 @@ public final class MainActivity extends Activity {
                 if(problem!=null){ if(page==10&&epoch==generation){metrics=null;updateMetricsPage();}notice.setText(problem.getMessage()); notice.setTextColor(appearance.danger); if(force)error(problem); return; }
                 boolean firstStatus=status==null;
                 status=result;if(selectedPage==0||selectedPage==10)metrics=statistics;
-                notice.setText(serviceOn()?"本机服务已连接":"后台服务未启动");notice.setTextColor(muted);
+                notice.setText(serviceOn()?L10n.tr("本机服务已连接"):L10n.tr("后台服务未启动"));notice.setTextColor(muted);
                 if(page==0 && epoch==generation && !busy)updateDashboard();
                 else if(page==10 && epoch==generation && !busy)updateMetricsPage();
                 else if(page==4 && firstStatus && epoch==generation && !busy){content.removeAllViews();actions.clear();settings();}
@@ -215,17 +215,17 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams heroParams=new LinearLayout.LayoutParams(-1,-2);heroParams.bottomMargin=dp(18);content.addView(hero,heroParams);
         connectionArt=new GlassGooseView(this,wanted,bypass,appearance.light);connectionArt.setMotionFinished(this::updateDashboard);
         hero.addView(connectionArt,new LinearLayout.LayoutParams(-1,dp(190)));
-        String state=status==null?"等待连接":!serviceOn()?"服务未启动":bypass&&wanted?"已自动直连":active?"代理运行中":wanted?"正在恢复连接":"代理已暂停";
+        String state=status==null?L10n.tr("等待连接"):!serviceOn()?L10n.tr("服务未启动"):bypass&&wanted?L10n.tr("已自动直连"):active?L10n.tr("代理运行中"):wanted?L10n.tr("正在恢复连接"):L10n.tr("代理已暂停");
         heroTitle=text(state,29,ink);heroTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));heroTitle.setGravity(Gravity.CENTER);hero.addView(heroTitle);
         heroDetail=text("",13,muted);heroDetail.setMinLines(2);heroDetail.setGravity(Gravity.CENTER);LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);detailParams.topMargin=dp(6);detailParams.bottomMargin=dp(10);hero.addView(heroDetail,detailParams);
-        proxyToggle=button(hero,wanted?"暂停代理":"启用代理",true,this::toggleProxy);
+        proxyToggle=button(hero,wanted?L10n.tr("暂停代理"):L10n.tr("启用代理"),true,this::toggleProxy);
         LinearLayout resources=row();LinearLayout.LayoutParams resourcesParams=new LinearLayout.LayoutParams(-1,-2);resourcesParams.bottomMargin=dp(8);content.addView(resources,resourcesParams);
-        cpuValue=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
-        memoryValue=metric(resources,"内存占用","—",appearance.light?0xff80643d:0xffdcc394,false);
+        cpuValue=metric(resources,L10n.tr("CPU 占用"),"—",appearance.light?0xff397c76:0xff8fcac1,true);
+        memoryValue=metric(resources,L10n.tr("内存占用"),"—",appearance.light?0xff80643d:0xffdcc394,false);
 
         LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
-        downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
-        uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
+        downloadValue=metric(rates,L10n.tr("下载速度"),"—",appearance.light?0xff405d97:0xffb8c8ff,true);
+        uploadValue=metric(rates,L10n.tr("上传速度"),"—",appearance.light?0xff795399:0xffd0b7fb,false);
         trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
 
         LinearLayout network=card("");JSONObject w=status==null?null:status.optJSONObject("wifiPolicy");
@@ -235,17 +235,17 @@ public final class MainActivity extends Activity {
         networkRow.addView(wifiIcon,new LinearLayout.LayoutParams(dp(44),dp(44)));
         LinearLayout networkText=column();LinearLayout.LayoutParams networkParams=new LinearLayout.LayoutParams(0,-2,1);networkParams.leftMargin=dp(13);networkRow.addView(networkText,networkParams);
         String iface=status==null?"":status.optString("interface");
-        String name=w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?"移动数据":"当前网络";
+        String name=w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?L10n.tr("移动数据"):L10n.tr("当前网络");
         networkName=text(name,18,ink);networkText.addView(networkName);networkPolicy=text("",13,muted);networkText.addView(networkPolicy);
-        TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription("网络策略");
+        TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription(L10n.tr("网络策略"));
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
         LinearLayout advancedText=column();advancedRow.addView(advancedText,new LinearLayout.LayoutParams(0,-2,1));
-        advancedText.addView(text("高级管理面板",16,ink));hint(advancedText,"策略组、DNS 与路由规则");advancedRow.addView(text("↗",22,muted));
+        advancedText.addView(text(L10n.tr("高级管理面板"),16,ink));hint(advancedText,L10n.tr("策略组、DNS 与路由规则"));advancedRow.addView(text("↗",22,muted));
         advanced.setOnClickListener(v->{if(!busy)panel("/");});actions.add(advanced);
-        button(content,"查看运行概况",false,()->showPage(10));
-        if(status==null)button(content,"连接模块 / 申请 Root 授权",false,()->refreshStatus(true));
+        button(content,L10n.tr("查看运行概况"),false,()->showPage(10));
+        if(status==null)button(content,L10n.tr("连接模块 / 申请 Root 授权"),false,()->refreshStatus(true));
         updateDashboard();
         fitHomeMetrics(rates);
     }
@@ -265,29 +265,29 @@ public final class MainActivity extends Activity {
         if(page!=0||connectionArt==null||heroTitle==null)return;
         JSONObject r=ready(),w=status==null?null:status.optJSONObject("wifiPolicy");boolean wanted=r.optBoolean("runtimeRequired"),active=r.optBoolean("runtimeRunning"),bypass=r.optBoolean("networkPolicyPaused");
         connectionArt.sync(wanted,bypass);
-        heroTitle.setText(proxySwitchPending?(proxySwitchTarget?"正在启用代理":"正在暂停代理"):status==null?"等待连接":!serviceOn()?"服务未启动":bypass&&wanted?"已自动直连":active?"代理运行中":wanted?"正在恢复连接":"代理已暂停");
-        heroDetail.setText(proxySwitchPending?"正在与本机服务同步…":bypass&&wanted?"当前 Wi-Fi 使用上游网络\n离开后，手机代理会自动接管。":active?"连接已由 DaedNext 接管\n按你的规则，自由切换出口。":"保留你的节点与规则\n启用后，按网络策略自动连接。");
-        proxyToggle.setText(proxySwitchPending?"正在切换…":wanted?"暂停代理":"启用代理");proxyToggle.setEnabled(!busy&&!proxySwitchPending&&!connectionArt.isAnimating()&&status!=null);
-        String iface=status==null?"":status.optString("interface");networkName.setText(w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?"移动数据":"当前网络");
-        networkPolicy.setText(w==null?"等待网络策略":w.optBoolean("enabled")?(w.optString("mode").equals("blacklist")?"黑名单":"白名单")+" · "+(w.optBoolean("direct")?"手机直连":"使用代理"):"按现有规则连接");
+        heroTitle.setText(proxySwitchPending?(proxySwitchTarget?L10n.tr("正在启用代理"):L10n.tr("正在暂停代理")):status==null?L10n.tr("等待连接"):!serviceOn()?L10n.tr("服务未启动"):bypass&&wanted?L10n.tr("已自动直连"):active?L10n.tr("代理运行中"):wanted?L10n.tr("正在恢复连接"):L10n.tr("代理已暂停"));
+        heroDetail.setText(proxySwitchPending?L10n.tr("正在与本机服务同步…"):bypass&&wanted?L10n.tr("当前 Wi-Fi 使用上游网络\n离开后，手机代理会自动接管。"):active?L10n.tr("连接已由 DaedNext 接管\n按你的规则，自由切换出口。"):L10n.tr("保留你的节点与规则\n启用后，按网络策略自动连接。"));
+        proxyToggle.setText(proxySwitchPending?L10n.tr("正在切换…"):wanted?L10n.tr("暂停代理"):L10n.tr("启用代理"));proxyToggle.setEnabled(!busy&&!proxySwitchPending&&!connectionArt.isAnimating()&&status!=null);
+        String iface=status==null?"":status.optString("interface");networkName.setText(w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?L10n.tr("移动数据"):L10n.tr("当前网络"));
+        networkPolicy.setText(w==null?L10n.tr("等待网络策略"):w.optBoolean("enabled")?(w.optString("mode").equals("blacklist")?L10n.tr("黑名单"):L10n.tr("白名单"))+" · "+(w.optBoolean("direct")?L10n.tr("手机直连"):L10n.tr("使用代理")):L10n.tr("按现有规则连接"));
         downloadValue.setText(metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s");uploadValue.setText(metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s");
         double cpu=metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent");
         cpuValue.setText(Double.isNaN(cpu)||Double.isInfinite(cpu)||cpu<0?"—":String.format(Locale.ROOT,"%.1f%%",cpu));
         memoryValue.setText(metrics==null?"—":bytes(metrics.optDouble("rssBytes")));
-        trafficScope.setText(bypass&&wanted?"仅统计本机服务；直连 Wi-Fi 的上游流量不计入。":"仅统计 DaedNext 服务及其转发流量。");
+        trafficScope.setText(bypass&&wanted?L10n.tr("仅统计本机服务；直连 Wi-Fi 的上游流量不计入。"):L10n.tr("仅统计 DaedNext 服务及其转发流量。"));
     }
     private void toggleProxy(){
         if(busy||proxySwitchPending||connectionArt==null||connectionArt.isAnimating()||status==null)return;
         boolean enable=!ready().optBoolean("runtimeRequired");proxySwitchPending=true;proxySwitchTarget=enable;connectionArt.beginSwitch(enable);updateDashboard();
-        task(enable?"正在启用代理…":"正在暂停代理…",()->{
+        task(enable?L10n.tr("正在启用代理…"):L10n.tr("正在暂停代理…"),()->{
             JSONObject result=new JSONObject();
             try{if(!serviceOn())module.command("start");api.post(enable?"runtime/reload":"runtime/stop",new JSONObject());result.put("status",module.status());}
-            catch(Exception problem){result.put("error",problem.getMessage()==null?"切换失败":problem.getMessage());try{result.put("status",module.status());}catch(Exception ignored){}}
+            catch(Exception problem){result.put("error",problem.getMessage()==null?L10n.tr("切换失败"):problem.getMessage());try{result.put("status",module.status());}catch(Exception ignored){}}
             return result;
         },result->{
             status=result.optJSONObject("status");proxySwitchPending=false;
             connectionArt.commit(ready().optBoolean("runtimeRequired"),ready().optBoolean("networkPolicyPaused"));updateDashboard();
-            if(result.has("error")){error(new Exception(result.getString("error")+(status==null?"；当前状态待确认，请刷新后查看":"")));if(status==null)refreshStatus(false);}
+            if(result.has("error")){error(new Exception(result.getString("error")+(status==null?L10n.tr("；当前状态待确认，请刷新后查看"):"")));if(status==null)refreshStatus(false);}
         });
     }
     private TextView metric(LinearLayout parent,String label,String value,int color,boolean first){
@@ -303,30 +303,30 @@ public final class MainActivity extends Activity {
         android.widget.FrameLayout icon=new android.widget.FrameLayout(this);icon.setBackground(shape(appearance.selected,15));
         icon.addView(new NavIconView(this,4,accent),new android.widget.FrameLayout.LayoutParams(dp(25),dp(25),Gravity.CENTER));heading.addView(icon,new LinearLayout.LayoutParams(dp(46),dp(46)));
         LinearLayout label=column();LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.leftMargin=dp(13);heading.addView(label,lp);
-        overviewState=text("正在读取运行状态",18,ink);label.addView(overviewState);overviewSample=text("等待本机采样",11,muted);label.addView(overviewSample);
-        hint(summary,"数据来自本机服务，仅在前台每 6 秒刷新。");
-        TextView resourceLabel=text("服务资源",14,muted);resourceLabel.setPadding(dp(3),dp(8),0,dp(9));content.addView(resourceLabel);
+        overviewState=text(L10n.tr("正在读取运行状态"),18,ink);label.addView(overviewState);overviewSample=text(L10n.tr("等待本机采样"),11,muted);label.addView(overviewSample);
+        hint(summary,L10n.tr("数据来自本机服务，仅在前台每 6 秒刷新。"));
+        TextView resourceLabel=text(L10n.tr("服务资源"),14,muted);resourceLabel.setPadding(dp(3),dp(8),0,dp(9));content.addView(resourceLabel);
         overviewValues=new TextView[6];LinearLayout resources=overviewRow();
-        overviewValues[0]=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
-        overviewValues[1]=metric(resources,"常驻内存","—",appearance.light?0xff80643d:0xffdcc394,false);
-        TextView flowLabel=text("代理流量",14,muted);flowLabel.setPadding(dp(3),dp(8),0,dp(9));content.addView(flowLabel);
-        LinearLayout rates=overviewRow();overviewValues[2]=metric(rates,"当前下载","—",appearance.light?0xff405d97:0xffb8c8ff,true);overviewValues[3]=metric(rates,"当前上传","—",appearance.light?0xff795399:0xffd0b7fb,false);
-        LinearLayout totals=overviewRow();overviewValues[4]=metric(totals,"累计下载","—",ink,true);overviewValues[5]=metric(totals,"累计上传","—",ink,false);
-        LinearLayout notes=card("统计范围");overviewScope=text("",12,muted);notes.addView(overviewScope);
-        button(content,"刷新运行数据",false,()->refreshStatus(true));
+        overviewValues[0]=metric(resources,L10n.tr("CPU 占用"),"—",appearance.light?0xff397c76:0xff8fcac1,true);
+        overviewValues[1]=metric(resources,L10n.tr("常驻内存"),"—",appearance.light?0xff80643d:0xffdcc394,false);
+        TextView flowLabel=text(L10n.tr("代理流量"),14,muted);flowLabel.setPadding(dp(3),dp(8),0,dp(9));content.addView(flowLabel);
+        LinearLayout rates=overviewRow();overviewValues[2]=metric(rates,L10n.tr("当前下载"),"—",appearance.light?0xff405d97:0xffb8c8ff,true);overviewValues[3]=metric(rates,L10n.tr("当前上传"),"—",appearance.light?0xff795399:0xffd0b7fb,false);
+        LinearLayout totals=overviewRow();overviewValues[4]=metric(totals,L10n.tr("累计下载"),"—",ink,true);overviewValues[5]=metric(totals,L10n.tr("累计上传"),"—",ink,false);
+        LinearLayout notes=card(L10n.tr("统计范围"));overviewScope=text("",12,muted);notes.addView(overviewScope);
+        button(content,L10n.tr("刷新运行数据"),false,()->refreshStatus(true));
         updateMetricsPage();refreshStatus(false);
     }
     private void updateMetricsPage(){
         if(page!=10||overviewValues==null)return;
         JSONObject r=ready();boolean bypass=r.optBoolean("networkPolicyPaused")&&r.optBoolean("runtimeRequired");
-        overviewState.setText(status==null?"等待连接":!serviceOn()?"服务未启动":bypass?"Wi-Fi 自动直连":r.optBoolean("runtimeRunning")?"代理运行中":r.optBoolean("runtimeRequired")?"正在恢复连接":"代理已暂停");
+        overviewState.setText(status==null?L10n.tr("等待连接"):!serviceOn()?L10n.tr("服务未启动"):bypass?L10n.tr("Wi-Fi 自动直连"):r.optBoolean("runtimeRunning")?L10n.tr("代理运行中"):r.optBoolean("runtimeRequired")?L10n.tr("正在恢复连接"):L10n.tr("代理已暂停"));
         String sampled=metrics==null?"":metrics.optString("updatedAt","");
         try{sampled=java.time.OffsetDateTime.parse(sampled).atZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss",Locale.getDefault()));}catch(Exception ignored){sampled="";}
-        overviewSample.setText(sampled.isEmpty()?"暂未取得运行采样":"最近采样 · "+sampled);
+        overviewSample.setText(sampled.isEmpty()?L10n.tr("暂未取得运行采样"):L10n.tr("最近采样 · ")+sampled);
         overviewValues[0].setText(percent(metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent")));
         String[] keys={"rssBytes","downloadRate","uploadRate","downloadTotal","uploadTotal"};
         for(int i=0;i<keys.length;i++){String value=bytes(metrics==null?Double.NaN:metrics.optDouble(keys[i]));overviewValues[i+1].setText(value.equals("—")?value:value+(i==1||i==2?"/s":""));}
-        overviewScope.setText("CPU 与内存仅统计 DaedNext 服务，不含其他应用。\n\n"+(bypass?"当前 Wi-Fi 自动直连，上游代理流量不计入这里。":"流量仅统计由手机代理转发的部分。")+"\n\n数据暂不可用时显示 —；离开 App 后停止刷新。");
+        overviewScope.setText(L10n.tr("CPU 与内存仅统计 DaedNext 服务，不含其他应用。\n\n")+(bypass?L10n.tr("当前 Wi-Fi 自动直连，上游代理流量不计入这里。"):L10n.tr("流量仅统计由手机代理转发的部分。"))+L10n.tr("\n\n数据暂不可用时显示 —；离开 App 后停止刷新。"));
     }
     private static String percent(double value){return Double.isNaN(value)||Double.isInfinite(value)||value<0?"—":String.format(Locale.ROOT,"%.1f%%",value);}
     private static String bytes(double n) { if(Double.isNaN(n)||Double.isInfinite(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }
@@ -337,49 +337,49 @@ public final class MainActivity extends Activity {
     private void resourceHeading(int index,String note){
         LinearLayout c=card("");LinearLayout title=row();c.addView(title);
         title.addView(new NavIconView(this,resourceIcon(index),resourceColor(index)),new LinearLayout.LayoutParams(dp(27),dp(27)));
-        TextView name=text(RESOURCE_NAMES[index]+"管理",22,ink);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,-2);p.leftMargin=dp(12);title.addView(name,p);hint(c,note);
+        TextView name=text(L10n.tr(RESOURCE_NAMES[index])+L10n.tr("管理"),22,ink);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,-2);p.leftMargin=dp(12);title.addView(name,p);hint(c,note);
     }
     private void loadResourceHub(){
-        TextView introduction=text("配置、解析与出口，一处管理。",13,muted);introduction.setPadding(dp(3),dp(1),dp(3),dp(18));content.addView(introduction);
+        TextView introduction=text(L10n.tr("配置、解析与出口，一处管理。"),13,muted);introduction.setPadding(dp(3),dp(1),dp(3),dp(18));content.addView(introduction);
         LinearLayout gridRow=null;
         for(int i=0;i<RESOURCE_NAMES.length;i++){
             if(i%2==0){gridRow=row();gridRow.setGravity(Gravity.TOP);content.addView(gridRow);}
-            final int index=i;LinearLayout c=column();c.setPadding(dp(16),dp(16),dp(16),dp(14));c.setBackground(shape(card,24));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(148),1);cp.bottomMargin=dp(12);if(i%2==0)cp.rightMargin=dp(6);else cp.leftMargin=dp(6);gridRow.addView(c,cp);
+            final int index=i;LinearLayout c=column();c.setPadding(dp(16),dp(16),dp(16),dp(14));c.setBackground(shape(card,24));c.setMinimumHeight(dp(148));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,-1,1);cp.bottomMargin=dp(12);if(i%2==0)cp.rightMargin=dp(6);else cp.leftMargin=dp(6);gridRow.addView(c,cp);
             LinearLayout line=row();c.addView(line);
             FrameLayout symbol=new FrameLayout(this);symbol.setBackground(shape(appearance.control,15));symbol.addView(new NavIconView(this,resourceIcon(i),resourceColor(i)),new FrameLayout.LayoutParams(dp(25),dp(25),Gravity.CENTER));line.addView(symbol,new LinearLayout.LayoutParams(dp(42),dp(42)));
             TextView count=text("—",13,muted);count.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);count.setTag("resource-count-"+i);line.addView(count,new LinearLayout.LayoutParams(0,-2,1));
-            TextView title=text(RESOURCE_NAMES[i]+"  ›",18,ink);title.setPadding(0,dp(13),0,dp(4));c.addView(title);c.addView(text(RESOURCE_HINTS[i],11,muted));
-            c.setContentDescription(RESOURCE_NAMES[i]);c.setOnClickListener(v->{if(!busy)openWorkspace(RESOURCE_PAGES[index]);});actions.add(c);
+            TextView title=text(L10n.tr(RESOURCE_NAMES[i])+(L10n.english()?"":"  ›"),L10n.english()?16:18,ink);title.setPadding(0,dp(13),0,dp(4));c.addView(title);c.addView(text(L10n.tr(RESOURCE_HINTS[i]),11,muted));
+            c.setContentDescription(L10n.tr(RESOURCE_NAMES[i]));c.setOnClickListener(v->{if(!busy)openWorkspace(RESOURCE_PAGES[index]);});actions.add(c);
         }
-        task("正在读取资源概况…",()->{
+        task(L10n.tr("正在读取资源概况…"),()->{
             String[] endpoints={"configs?summary=true","dns?summary=true","routings?summary=true","groups?summary=true","nodes","subscriptions"};int[] counts=new int[6];
             for(int i=0;i<endpoints.length;i++)counts[i]=items(api.get(endpoints[i])).length();counts[4]+=items(api.get("nodes?independent=false")).length();return counts;
         },counts->{for(int i=0;i<counts.length;i++){TextView view=content.findViewWithTag("resource-count-"+i);if(view!=null)view.setText(String.format(Locale.ROOT,"%02d",counts[i]));}});
     }
     private JSONArray items(JSONObject j) { JSONArray a=j.optJSONArray("items");return a==null?new JSONArray():a; }
     private void loadNodes() {
-        resourceHeading(4,"查看协议与延迟，管理独立和订阅节点。");
-        LinearLayout tools=card("");hint(tools,"导入节点、查看延迟，使用策略组管理代理出口。");
-        paired(tools,"导入节点链接",this::importNodes,"策略组",()->openWorkspace(6));
-        button(tools,"刷新节点 / 延迟",false,()->showPage(1));
-        task("正在读取节点…",()->{
+        resourceHeading(4,L10n.tr("查看协议与延迟，管理独立和订阅节点。"));
+        LinearLayout tools=card("");hint(tools,L10n.tr("导入节点、查看延迟，使用策略组管理代理出口。"));
+        paired(tools,L10n.tr("导入节点链接"),this::importNodes,L10n.tr("策略组"),()->openWorkspace(6));
+        button(tools,L10n.tr("刷新节点 / 延迟"),false,()->showPage(1));
+        task(L10n.tr("正在读取节点…"),()->{
             JSONArray all=items(api.get("nodes")), subscribed=items(api.get("nodes?independent=false"));
             for(int i=0;i<subscribed.length();i++)all.put(subscribed.get(i));
             JSONObject result=new JSONObject();result.put("nodes",all);result.put("latencies",api.get("nodes/latencies"));return result;
         },result->{
             JSONArray all=result.getJSONArray("nodes"), latencies=items(result.getJSONObject("latencies"));
             Map<Long,JSONObject> latencyMap=new HashMap<>();for(int i=0;i<latencies.length();i++){JSONObject l=latencies.getJSONObject(i);latencyMap.put(l.optLong("id"),l);}
-            if(all.length()==0)hint(card("还没有节点"),"导入节点，或前往“订阅”添加订阅地址。");
+            if(all.length()==0)hint(card(L10n.tr("还没有节点")),L10n.tr("导入节点，或前往“订阅”添加订阅地址。"));
             for(int i=0;i<all.length();i++) {
-                JSONObject node=all.getJSONObject(i); LinearLayout c=card(node.optString("name","未命名节点"));
-                hint(c,node.optString("protocol","—").toUpperCase(Locale.ROOT)+" · "+(node.isNull("subscriptionId")?"独立节点":"订阅节点"));
+                JSONObject node=all.getJSONObject(i); LinearLayout c=card(node.optString("name",L10n.tr("未命名节点")));
+                hint(c,node.optString("protocol","—").toUpperCase(Locale.ROOT)+" · "+(node.isNull("subscriptionId")?L10n.tr("独立节点"):L10n.tr("订阅节点")));
                 JSONObject latency=latencyMap.get(node.optLong("id"));
-                hint(c,latency==null?"尚无延迟记录":latency.optBoolean("alive")?"延迟 "+latency.optString("latencyMs","—")+" ms":"最近探测未通过");
-                paired(c,"测速",()->task("已提交节点测速…",()->api.post("nodes/latencies",new JSONObject().put("nodeIds",new JSONArray().put(node.getLong("id")))),j->Toast.makeText(this,"测速在模块中执行，稍后点击刷新查看结果",Toast.LENGTH_LONG).show()),
-                    "管理节点",()->new AlertDialog.Builder(this).setTitle(node.optString("name"))
-                    .setItems(new String[]{"编辑名称与链接","删除节点"},(d,index)->{if(index==0)editNode(node);else confirm("删除节点","将从模块中删除该节点。",()->task("正在删除…",()->api.delete("nodes/"+node.optLong("id")),j->showPage(1)));}).show());
+                hint(c,latency==null?L10n.tr("尚无延迟记录"):latency.optBoolean("alive")?L10n.tr("延迟 ")+latency.optString("latencyMs","—")+" ms":L10n.tr("最近探测未通过"));
+                paired(c,L10n.tr("测速"),()->task(L10n.tr("已提交节点测速…"),()->api.post("nodes/latencies",new JSONObject().put("nodeIds",new JSONArray().put(node.getLong("id")))),j->Toast.makeText(this,L10n.tr("测速在模块中执行，稍后点击刷新查看结果"),Toast.LENGTH_LONG).show()),
+                    L10n.tr("管理节点"),()->new AlertDialog.Builder(this).setTitle(node.optString("name"))
+                    .setItems(new String[]{L10n.tr("编辑名称与链接"),L10n.tr("删除节点")},(d,index)->{if(index==0)editNode(node);else confirm(L10n.tr("删除节点"),L10n.tr("将从模块中删除该节点。"),()->task(L10n.tr("正在删除…"),()->api.delete("nodes/"+node.optLong("id")),j->showPage(1)));}).show());
             }
-            hint(card("共 "+all.length()+" 个节点"),"在群组页管理节点归属与自动优选策略。");
+            hint(card(L10n.tr("共 ")+all.length()+L10n.tr(" 个节点")),L10n.tr("在群组页管理节点归属与自动优选策略。"));
         });
     }
     private EditText field(LinearLayout parent,String label,String value,boolean multiline,boolean secret) {
@@ -390,83 +390,83 @@ public final class MainActivity extends Activity {
     }
     private void form(String title,LinearLayout fields,Runnable save) {
         ScrollView scroll=new ScrollView(this);scroll.addView(fields);
-        formDialog=new AlertDialog.Builder(this).setTitle(title).setView(scroll).setNegativeButton("取消",null).setPositiveButton("保存",null).create();
+        formDialog=new AlertDialog.Builder(this).setTitle(title).setView(scroll).setNegativeButton(L10n.tr("取消"),null).setPositiveButton(L10n.tr("保存"),null).create();
         formDialog.setOnShowListener(d->formDialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{if(!busy)save.run();}));
         formDialog.show();
         formDialog.getWindow().setBackgroundDrawable(shape(card,26));
     }
     private LinearLayout formFields() { LinearLayout v=column();v.setPadding(dp(22),dp(8),dp(22),dp(8));return v; }
     private void importNodes() {
-        LinearLayout fields=formFields();EditText links=field(fields,"每行一个节点链接","",true,false);
+        LinearLayout fields=formFields();EditText links=field(fields,L10n.tr("每行一个节点链接"),"",true,false);
         links.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI|InputType.TYPE_TEXT_FLAG_MULTI_LINE|InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
-        form("导入节点",fields,()->task("正在导入节点…",()->{
+        form(L10n.tr("导入节点"),fields,()->task(L10n.tr("正在导入节点…"),()->{
             JSONArray args=new JSONArray();for(String line:links.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty()){
-                if(!line.trim().matches("[A-Za-z][A-Za-z0-9+.-]*://.+"))throw new Exception("请粘贴完整节点链接，每行一个");
+                if(!line.trim().matches("[A-Za-z][A-Za-z0-9+.-]*://.+"))throw new Exception(L10n.tr("请粘贴完整节点链接，每行一个"));
                 args.put(new JSONObject().put("link",line.trim()));
             }
-            if(args.length()==0)throw new Exception("请填写节点链接");return api.post("nodes",new JSONObject().put("args",args));
+            if(args.length()==0)throw new Exception(L10n.tr("请填写节点链接"));return api.post("nodes",new JSONObject().put("args",args));
         },j->{
             JSONArray results=items(j);int imported=0;
             for(int i=0;i<results.length();i++)if(results.getJSONObject(i).optJSONObject("node")!=null)imported++;
             int failed=results.length()-imported;showPage(1);
-            String summary="已导入 "+imported+" 个节点"+(failed>0?"，"+failed+" 个链接未能导入，请检查格式。":"。");
-            new AlertDialog.Builder(this).setTitle("导入结果").setMessage(summary).setPositiveButton("完成",null).show();
+            String summary=L10n.tr("已导入 ")+imported+L10n.tr(" 个节点")+(failed>0?"，"+failed+L10n.tr(" 个链接未能导入，请检查格式。"):"。");
+            new AlertDialog.Builder(this).setTitle(L10n.tr("导入结果")).setMessage(summary).setPositiveButton(L10n.tr("完成"),null).show();
         }));
     }
     private void editNode(JSONObject node) {
-        LinearLayout fields=formFields();EditText name=field(fields,"节点名称",node.optString("name"),false,false);
-        EditText link=field(fields,"节点链接（包含凭据）",node.optString("link"),false,true);
-        form("编辑节点",fields,()->task("正在保存节点…",()->api.patch("nodes/"+node.optLong("id"),new JSONObject().put("tag",name.getText().toString()).put("link",link.getText().toString())),j->showPage(1)));
+        LinearLayout fields=formFields();EditText name=field(fields,L10n.tr("节点名称"),node.optString("name"),false,false);
+        EditText link=field(fields,L10n.tr("节点链接（包含凭据）"),node.optString("link"),false,true);
+        form(L10n.tr("编辑节点"),fields,()->task(L10n.tr("正在保存节点…"),()->api.patch("nodes/"+node.optLong("id"),new JSONObject().put("tag",name.getText().toString()).put("link",link.getText().toString())),j->showPage(1)));
     }
     private void loadSubscriptions() {
-        resourceHeading(5,"让节点来源井然有序，更新与管理更从容。");
-        LinearLayout tools=card("订阅管理");hint(tools,"添加和更新订阅，集中管理你的代理节点。");
-        button(tools,"添加订阅",true,()->subscriptionForm(null));button(tools,"刷新列表",false,()->showPage(2));
-        task("正在读取订阅…",()->api.get("subscriptions"),j->{
-            JSONArray list=items(j);if(list.length()==0)hint(card("还没有订阅"),"添加自己的 HTTP 或 HTTPS 订阅地址。");
+        resourceHeading(5,L10n.tr("让节点来源井然有序，更新与管理更从容。"));
+        LinearLayout tools=card(L10n.tr("订阅管理"));hint(tools,L10n.tr("添加和更新订阅，集中管理你的代理节点。"));
+        button(tools,L10n.tr("添加订阅"),true,()->subscriptionForm(null));button(tools,L10n.tr("刷新列表"),false,()->showPage(2));
+        task(L10n.tr("正在读取订阅…"),()->api.get("subscriptions"),j->{
+            JSONArray list=items(j);if(list.length()==0)hint(card(L10n.tr("还没有订阅")),L10n.tr("添加自己的 HTTP 或 HTTPS 订阅地址。"));
             for(int i=0;i<list.length();i++) {
-                JSONObject sub=list.getJSONObject(i);LinearLayout c=card(sub.optString("tag","").isEmpty()?"订阅 #"+sub.optLong("id"):sub.optString("tag"));
-                hint(c,sub.optInt("nodeCount")+" 个节点 · "+(sub.optBoolean("cronEnable")?"自动更新已开启":"手动更新"));
-                hint(c,"最近更新  "+localTime(sub.optString("updatedAt","")));
-                button(c,"更新订阅",true,()->task("正在更新订阅，请稍候…",()->api.post("subscriptions/"+sub.optLong("id")+"/refresh",new JSONObject()),response->{showPage(2);if(response.has("refreshError")&&!response.isNull("refreshError"))textDialog("订阅更新结果",response.opt("refreshError").toString());else Toast.makeText(this,"订阅更新完成",Toast.LENGTH_SHORT).show();}));
-                Button[] toolsRow=paired(c,"编辑订阅",()->subscriptionForm(sub),"删除订阅",()->confirm("删除订阅","将删除此订阅及其节点，请确认相关策略组仍有可用节点。",()->task("正在删除订阅…",()->api.delete("subscriptions/"+sub.optLong("id")),response->showPage(2))));
+                JSONObject sub=list.getJSONObject(i);LinearLayout c=card(sub.optString("tag","").isEmpty()?L10n.tr("订阅 #")+sub.optLong("id"):sub.optString("tag"));
+                hint(c,sub.optInt("nodeCount")+L10n.tr(" 个节点 · ")+(sub.optBoolean("cronEnable")?L10n.tr("自动更新已开启"):L10n.tr("手动更新")));
+                hint(c,L10n.tr("最近更新  ")+localTime(sub.optString("updatedAt","")));
+                button(c,L10n.tr("更新订阅"),true,()->task(L10n.tr("正在更新订阅，请稍候…"),()->api.post("subscriptions/"+sub.optLong("id")+"/refresh",new JSONObject()),response->{showPage(2);if(response.has("refreshError")&&!response.isNull("refreshError"))textDialog(L10n.tr("订阅更新结果"),response.opt("refreshError").toString());else Toast.makeText(this,L10n.tr("订阅更新完成"),Toast.LENGTH_SHORT).show();}));
+                Button[] toolsRow=paired(c,L10n.tr("编辑订阅"),()->subscriptionForm(sub),L10n.tr("删除订阅"),()->confirm(L10n.tr("删除订阅"),L10n.tr("将删除此订阅及其节点，请确认相关策略组仍有可用节点。"),()->task(L10n.tr("正在删除订阅…"),()->api.delete("subscriptions/"+sub.optLong("id")),response->showPage(2))));
                 toolsRow[1].setTextColor(appearance.danger);
             }
         });
     }
     private void subscriptionForm(JSONObject existing) {
-        LinearLayout fields=formFields();EditText name=field(fields,"订阅名称",existing==null?"":existing.optString("tag"),false,false);
-        EditText link=field(fields,"订阅地址（包含凭据）",existing==null?"":existing.optString("link"),false,true);
-        Switch useProxy=new Switch(this);useProxy.setText("通过当前代理更新");useProxy.setTextColor(ink);useProxy.setChecked(existing!=null&&existing.optBoolean("useProxy"));fields.addView(useProxy);
-        form(existing==null?"添加订阅":"编辑订阅",fields,()->task("正在保存订阅…",()->{
+        LinearLayout fields=formFields();EditText name=field(fields,L10n.tr("订阅名称"),existing==null?"":existing.optString("tag"),false,false);
+        EditText link=field(fields,L10n.tr("订阅地址（包含凭据）"),existing==null?"":existing.optString("link"),false,true);
+        Switch useProxy=new Switch(this);useProxy.setText(L10n.tr("通过当前代理更新"));useProxy.setTextColor(ink);useProxy.setChecked(existing!=null&&existing.optBoolean("useProxy"));fields.addView(useProxy);
+        form(existing==null?L10n.tr("添加订阅"):L10n.tr("编辑订阅"),fields,()->task(L10n.tr("正在保存订阅…"),()->{
             String url=link.getText().toString().trim();java.net.URI uri=new java.net.URI(url);
-            if(!("https".equals(uri.getScheme())||"http".equals(uri.getScheme()))||uri.getHost()==null)throw new Exception("请填写有效的 HTTP 或 HTTPS 订阅地址");
+            if(!("https".equals(uri.getScheme())||"http".equals(uri.getScheme()))||uri.getHost()==null)throw new Exception(L10n.tr("请填写有效的 HTTP 或 HTTPS 订阅地址"));
             JSONObject body=new JSONObject().put("tag",name.getText().toString()).put("link",url).put("useProxy",useProxy.isChecked());
             return existing==null?api.post("subscriptions",body):api.patch("subscriptions/"+existing.optLong("id"),body);
         },j->showPage(2)));
     }
     private String localTime(String value){
         try{return java.time.OffsetDateTime.parse(value).atZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm",Locale.getDefault()));}
-        catch(Exception error){return "暂未更新";}
+        catch(Exception error){return L10n.tr("暂未更新");}
     }
     private void loadWifi() {
-        hint(card("Wi-Fi 自动切换"),"黑名单中的 Wi-Fi 手机直连，名单外代理；白名单模式相反。移动数据策略独立。");
-        task("正在读取网络策略…",()->module.wifi(),info->{
+        hint(card(L10n.tr("Wi-Fi 自动切换")),L10n.tr("黑名单中的 Wi-Fi 手机直连，名单外代理；白名单模式相反。移动数据策略独立。"));
+        task(L10n.tr("正在读取网络策略…"),()->module.wifi(),info->{
             wifiConfig=new JSONObject(info.getJSONObject("config").toString());mode=wifiConfig.optString("mode","blacklist");
-            LinearLayout c=card("自动切换策略");
-            wifiEnabled=new Switch(this);wifiEnabled.setText("启用 Wi-Fi 自动切换");wifiEnabled.setTextColor(ink);wifiEnabled.setChecked(wifiConfig.optBoolean("enabled"));c.addView(wifiEnabled);actions.add(wifiEnabled);
-            Spinner spinner=new Spinner(this);spinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"黑名单 · 名单内直连","白名单 · 仅名单内代理"}));spinner.setSelection(mode.equals("blacklist")?0:1);c.addView(spinner);actions.add(spinner);
-            wifiNames=field(c,"每行一个 Wi-Fi 名称，精确匹配、区分大小写",join(wifiConfig.optJSONArray(mode)),true,false);wifiNames.setMinLines(5);actions.add(wifiNames);
-            cellular=new Switch(this);cellular.setText("非 Wi-Fi 网络使用代理");cellular.setTextColor(ink);cellular.setChecked(wifiConfig.optBoolean("proxy_on_non_wifi",true));c.addView(cellular);actions.add(cellular);
+            LinearLayout c=card(L10n.tr("自动切换策略"));
+            wifiEnabled=new Switch(this);wifiEnabled.setText(L10n.tr("启用 Wi-Fi 自动切换"));wifiEnabled.setTextColor(ink);wifiEnabled.setChecked(wifiConfig.optBoolean("enabled"));c.addView(wifiEnabled);actions.add(wifiEnabled);
+            Spinner spinner=new Spinner(this);spinner.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{L10n.tr("黑名单 · 名单内直连"),L10n.tr("白名单 · 仅名单内代理")}));spinner.setSelection(mode.equals("blacklist")?0:1);c.addView(spinner);actions.add(spinner);
+            wifiNames=field(c,L10n.tr("每行一个 Wi-Fi 名称，精确匹配、区分大小写"),join(wifiConfig.optJSONArray(mode)),true,false);wifiNames.setMinLines(5);actions.add(wifiNames);
+            cellular=new Switch(this);cellular.setText(L10n.tr("非 Wi-Fi 网络使用代理"));cellular.setTextColor(ink);cellular.setChecked(wifiConfig.optBoolean("proxy_on_non_wifi",true));c.addView(cellular);actions.add(cellular);
             spinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener(){public void onNothingSelected(android.widget.AdapterView<?> p){}public void onItemSelected(android.widget.AdapterView<?> p,View v,int pos,long id){String next=pos==0?"blacklist":"whitelist";if(next.equals(mode))return;try{wifiConfig.put(mode,parseNames(wifiNames.getText().toString()));mode=next;wifiNames.setText(join(wifiConfig.optJSONArray(mode)));wifiDraft=true;}catch(Exception e){error(e);}}});
             wifiNames.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int a,int b,int c){}public void onTextChanged(CharSequence s,int a,int b,int c){wifiDraft=true;}public void afterTextChanged(android.text.Editable e){}});
             wifiEnabled.setOnCheckedChangeListener((b,on)->wifiDraft=true);cellular.setOnCheckedChangeListener((b,on)->wifiDraft=true);
-            JSONObject current=info.optJSONObject("current");hint(c,"当前 Wi-Fi："+(current==null||current.isNull("ssid")?"暂不可用":current.optString("ssid")));
-            button(c,"添加当前 Wi-Fi",false,()->task("正在读取当前 Wi-Fi…",()->module.wifi(),fresh->{JSONObject network=fresh.optJSONObject("current");if(network==null||network.isNull("ssid"))throw new Exception("当前没有可识别的 Wi-Fi");String ssid=network.getString("ssid");JSONArray names=parseNames(wifiNames.getText().toString());boolean exists=false;for(int i=0;i<names.length();i++)exists|=ssid.equals(names.getString(i));if(!exists)names.put(ssid);wifiNames.setText(join(names));wifiDraft=true;}));
-            button(c,"保存网络策略",true,()->{
+            JSONObject current=info.optJSONObject("current");hint(c,L10n.tr("当前 Wi-Fi：")+(current==null||current.isNull("ssid")?L10n.tr("暂不可用"):current.optString("ssid")));
+            button(c,L10n.tr("添加当前 Wi-Fi"),false,()->task(L10n.tr("正在读取当前 Wi-Fi…"),()->module.wifi(),fresh->{JSONObject network=fresh.optJSONObject("current");if(network==null||network.isNull("ssid"))throw new Exception(L10n.tr("当前没有可识别的 Wi-Fi"));String ssid=network.getString("ssid");JSONArray names=parseNames(wifiNames.getText().toString());boolean exists=false;for(int i=0;i<names.length();i++)exists|=ssid.equals(names.getString(i));if(!exists)names.put(ssid);wifiNames.setText(join(names));wifiDraft=true;}));
+            button(c,L10n.tr("保存网络策略"),true,()->{
                 try {
                     JSONObject save=new JSONObject(wifiConfig.toString()).put(mode,parseNames(wifiNames.getText().toString())).put("mode",mode).put("enabled",wifiEnabled.isChecked()).put("proxy_on_non_wifi",cellular.isChecked());
-                    task("正在保存网络策略…",()->{module.saveWifi(save);return save;},saved->{wifiConfig=saved;wifiDraft=false;Toast.makeText(this,"已保存，策略将在数秒内生效",Toast.LENGTH_LONG).show();});
+                    task(L10n.tr("正在保存网络策略…"),()->{module.saveWifi(save);return save;},saved->{wifiConfig=saved;wifiDraft=false;Toast.makeText(this,L10n.tr("已保存，策略将在数秒内生效"),Toast.LENGTH_LONG).show();});
                 }catch(Exception e){error(e);}
             });
         });
@@ -474,67 +474,73 @@ public final class MainActivity extends Activity {
     static JSONArray parseNames(String text) throws Exception {
         LinkedHashSet<String> unique=new LinkedHashSet<>();
         for(String name:text.split("\\r?\\n",-1))if(!name.isEmpty()){
-            if(name.getBytes(StandardCharsets.UTF_8).length>32)throw new Exception("每个 Wi-Fi 名称最多 32 个 UTF-8 字节");
-            for(int i=0;i<name.length();i++)if(Character.isISOControl(name.charAt(i)))throw new Exception("Wi-Fi 名称不能包含控制字符");
+            if(name.getBytes(StandardCharsets.UTF_8).length>32)throw new Exception(L10n.tr("每个 Wi-Fi 名称最多 32 个 UTF-8 字节"));
+            for(int i=0;i<name.length();i++)if(Character.isISOControl(name.charAt(i)))throw new Exception(L10n.tr("Wi-Fi 名称不能包含控制字符"));
             unique.add(name);
         }
-        if(unique.size()>128)throw new Exception("每份名单最多 128 项");return new JSONArray(unique);
+        if(unique.size()>128)throw new Exception(L10n.tr("每份名单最多 128 项"));return new JSONArray(unique);
     }
     private String join(JSONArray values){if(values==null)return "";StringBuilder out=new StringBuilder();for(int i=0;i<values.length();i++){if(i>0)out.append('\n');out.append(values.optString(i));}return out.toString();}
     private void settings() {
-        LinearLayout look=card("外观");
-        hint(look,"云雾浅色与星夜深色，也可以随系统自动切换。");
-        button(look,Appearance.LABELS[Appearance.selected(this)],false,()->new AlertDialog.Builder(this)
-            .setTitle("选择外观").setSingleChoiceItems(Appearance.LABELS,Appearance.selected(this),(dialog,index)->{
+        LinearLayout look=card(L10n.tr("外观"));
+        hint(look,L10n.tr("云雾浅色与星夜深色，也可以随系统自动切换。"));
+        button(look,L10n.labels(Appearance.LABELS)[Appearance.selected(this)],false,()->new AlertDialog.Builder(this)
+            .setTitle(L10n.tr("选择外观")).setSingleChoiceItems(L10n.labels(Appearance.LABELS),Appearance.selected(this),(dialog,index)->{
                 dialog.dismiss(); if(index!=Appearance.selected(this)){Appearance.save(this,index);recreate();}
-            }).setNegativeButton("取消",null).show());
-        LinearLayout service=card("模块服务");hint(service,"暂停代理会保留管理功能；停止服务会关闭整个代理后台。");
-        paired(service,"启动服务",()->serviceCommand("start"),"重启服务",()->confirm("重启服务","代理连接会短暂中断，配置保留。",()->serviceCommand("restart")));
-        button(service,"停止服务",false,()->confirm("停止服务","管理接口与手机代理将停止，之后可从 App 再次启动。",()->serviceCommand("stop"))).setTextColor(appearance.danger);
-        LinearLayout options=card("兼容与自启");
-        option(options,"开机启动",status!=null&&status.optBoolean("autostart"),"autostart");
-        option(options,"Google 服务联网兼容",status!=null&&status.optBoolean("googleNetworkCompat"),"google-network");
-        hint(options,"Google 兼容只适用于已验证的 ColorOS 框架，保留原有选项。");
-        LinearLayout tools=card("维护工具");
-        button(tools,"应用当前配置",false,()->task("正在应用配置…",()->api.post("runtime/reload",new JSONObject()),j->{Toast.makeText(this,"配置已应用",Toast.LENGTH_SHORT).show();refreshStatus(false);}));
-        button(tools,"备份配置与名单",false,()->task("正在一致性备份，服务会短暂重启…",()->module.command("backup"),value->{
+            }).setNegativeButton(L10n.tr("取消"),null).show());
+        LinearLayout language=card(L10n.tr("语言"));
+        hint(language,L10n.tr("仅更改 App 界面语言，不修改节点、订阅或网络策略。"));
+        button(language,L10n.options()[L10n.selected(this)],false,()->new AlertDialog.Builder(this)
+            .setTitle(L10n.tr("选择语言")).setSingleChoiceItems(L10n.options(),L10n.selected(this),(dialog,index)->{
+                dialog.dismiss();if(index!=L10n.selected(this)){L10n.save(this,index);recreate();}
+            }).setNegativeButton(L10n.tr("取消"),null).show());
+        LinearLayout service=card(L10n.tr("模块服务"));hint(service,L10n.tr("暂停代理会保留管理功能；停止服务会关闭整个代理后台。"));
+        paired(service,L10n.tr("启动服务"),()->serviceCommand("start"),L10n.tr("重启服务"),()->confirm(L10n.tr("重启服务"),L10n.tr("代理连接会短暂中断，配置保留。"),()->serviceCommand("restart")));
+        button(service,L10n.tr("停止服务"),false,()->confirm(L10n.tr("停止服务"),L10n.tr("管理接口与手机代理将停止，之后可从 App 再次启动。"),()->serviceCommand("stop"))).setTextColor(appearance.danger);
+        LinearLayout options=card(L10n.tr("兼容与自启"));
+        option(options,L10n.tr("开机启动"),status!=null&&status.optBoolean("autostart"),"autostart");
+        option(options,L10n.tr("Google 服务联网兼容"),status!=null&&status.optBoolean("googleNetworkCompat"),"google-network");
+        hint(options,L10n.tr("Google 兼容只适用于已验证的 ColorOS 框架，保留原有选项。"));
+        LinearLayout tools=card(L10n.tr("维护工具"));
+        button(tools,L10n.tr("应用当前配置"),false,()->task(L10n.tr("正在应用配置…"),()->api.post("runtime/reload",new JSONObject()),j->{Toast.makeText(this,L10n.tr("配置已应用"),Toast.LENGTH_SHORT).show();refreshStatus(false);}));
+        button(tools,L10n.tr("备份配置与名单"),false,()->task(L10n.tr("正在一致性备份，服务会短暂重启…"),()->module.command("backup"),value->{
             String path="";for(String line:value.split("\\r?\\n"))if(line.startsWith("/data/adb/daenext/backups/")&&line.endsWith(".tar.gz"))path=line;
-            textDialog("备份完成",path.isEmpty()?"备份操作完成，请在模块备份目录核对文件。":"备份已保存在：\n"+path);
+            textDialog(L10n.tr("备份完成"),path.isEmpty()?L10n.tr("备份操作完成，请在模块备份目录核对文件。"):L10n.tr("备份已保存在：\n")+path);
         }));
-        button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
-        button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.15"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        button(tools,L10n.tr("查看运行日志"),false,()->task(L10n.tr("正在读取日志…"),()->module.command("logs"),value->textDialog(L10n.tr("运行日志 · 仅在本机显示"),value)));
+        button(tools,L10n.tr("高级管理面板"),false,()->panel("/"));
+        hint(card("DaedNext Manager · 0.1.16"),L10n.tr("需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。"));
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
-        resourceHeading(0,"一份配置，掌握连接的基础行为。");
-        LinearLayout top=card("运行参数");hint(top,"编辑核心参数和连通性探测。保存后，点击“应用当前配置”使修改生效。");
-        paired(top,"新建配置",()->task("正在准备配置…",()->api.get("configs"),data->{
+        resourceHeading(0,L10n.tr("一份配置，掌握连接的基础行为。"));
+        LinearLayout top=card(L10n.tr("运行参数"));hint(top,L10n.tr("编辑核心参数和连通性探测。保存后，点击“应用当前配置”使修改生效。"));
+        paired(top,L10n.tr("新建配置"),()->task(L10n.tr("正在准备配置…"),()->api.get("configs"),data->{
             JSONArray list=items(data);JSONObject template=null;
             for(int i=0;i<list.length();i++)if(list.getJSONObject(i).optBoolean("selected"))template=list.getJSONObject(i);
             if(template==null&&list.length()>0)template=list.getJSONObject(0);
-            if(template==null)task("正在读取默认值…",()->api.post("configs/parsed",new JSONObject()),j->configForm(null,j.optJSONObject("parsedGlobal")));
+            if(template==null)task(L10n.tr("正在读取默认值…"),()->api.post("configs/parsed",new JSONObject()),j->configForm(null,j.optJSONObject("parsedGlobal")));
             else configForm(null,template.optJSONObject("parsedGlobal"));
-        }),"刷新",()->showPage(5));
-        button(top,"应用当前配置",true,()->confirm("应用当前配置","将应用已选配置与群组设置，代理连接可能短暂重建。",()->task("正在应用配置…",()->api.post("runtime/reload",new JSONObject()),j->{Toast.makeText(this,"配置已应用",Toast.LENGTH_SHORT).show();refreshStatus(false);})));
-        task("正在读取配置…",()->api.get("configs"),result->{
+        }),L10n.tr("刷新"),()->showPage(5));
+        button(top,L10n.tr("应用当前配置"),true,()->confirm(L10n.tr("应用当前配置"),L10n.tr("将应用已选配置与群组设置，代理连接可能短暂重建。"),()->task(L10n.tr("正在应用配置…"),()->api.post("runtime/reload",new JSONObject()),j->{Toast.makeText(this,L10n.tr("配置已应用"),Toast.LENGTH_SHORT).show();refreshStatus(false);})));
+        task(L10n.tr("正在读取配置…"),()->api.get("configs"),result->{
             JSONArray list=items(result);
-            if(list.length()==0)hint(card("还没有配置"),"新建一份配置后，选择并应用。");
+            if(list.length()==0)hint(card(L10n.tr("还没有配置")),L10n.tr("新建一份配置后，选择并应用。"));
             for(int i=0;i<list.length();i++){
                 JSONObject config=list.getJSONObject(i),values=config.optJSONObject("parsedGlobal");
-                LinearLayout c=card(config.optString("name","未命名配置"));
-                TextView state=text(config.optBoolean("selected")?"● 已选配置":"备用配置",12,config.optBoolean("selected")?accent:muted);c.addView(state);
+                LinearLayout c=card(config.optString("name",L10n.tr("未命名配置")));
+                TextView state=text(config.optBoolean("selected")?L10n.tr("● 已选配置"):L10n.tr("备用配置"),12,config.optBoolean("selected")?accent:muted);c.addView(state);
                 if(values!=null){
-                    hint(c,"检查间隔  "+values.optString("checkInterval","—")+"    拨号模式  "+values.optString("dialMode","—"));
-                    hint(c,"日志级别  "+values.optString("logLevel","—"));
-                }else hint(c,"解析异常："+config.optString("parseError","无法读取结构化参数"));
-                paired(c,"编辑参数",()->task("正在读取参数…",()->api.get("configs/"+config.optLong("id")),fresh->configForm(fresh,fresh.optJSONObject("parsedGlobal"))),
-                    "更多",()->new AlertDialog.Builder(this).setTitle(config.optString("name"))
-                        .setItems(new String[]{"选择此配置","复制配置","删除配置"},(dialog,index)->{
-                            if(index==0)task("正在选择配置…",()->api.post("configs/"+config.optLong("id")+"/select",new JSONObject()),j->{showPage(5);Toast.makeText(this,"已选择，应用后生效",Toast.LENGTH_LONG).show();});
+                    hint(c,L10n.tr("检查间隔  ")+values.optString("checkInterval","—")+L10n.tr("    拨号模式  ")+values.optString("dialMode","—"));
+                    hint(c,L10n.tr("日志级别  ")+values.optString("logLevel","—"));
+                }else hint(c,L10n.tr("解析异常：")+config.optString("parseError",L10n.tr("无法读取结构化参数")));
+                paired(c,L10n.tr("编辑参数"),()->task(L10n.tr("正在读取参数…"),()->api.get("configs/"+config.optLong("id")),fresh->configForm(fresh,fresh.optJSONObject("parsedGlobal"))),
+                    L10n.tr("更多"),()->new AlertDialog.Builder(this).setTitle(config.optString("name"))
+                        .setItems(new String[]{L10n.tr("选择此配置"),L10n.tr("复制配置"),L10n.tr("删除配置")},(dialog,index)->{
+                            if(index==0)task(L10n.tr("正在选择配置…"),()->api.post("configs/"+config.optLong("id")+"/select",new JSONObject()),j->{showPage(5);Toast.makeText(this,L10n.tr("已选择，应用后生效"),Toast.LENGTH_LONG).show();});
                             else if(index==1){try{configForm(null,values);}catch(Exception e){error(e);}}
-                            else if(config.optBoolean("selected"))error(new Exception("当前配置已被选中，请先选择另一份配置后再删除"));
-                            else confirm("删除配置","将删除“"+config.optString("name")+"”。正在运行使用的配置无法删除。",()->task("正在删除配置…",()->api.delete("configs/"+config.optLong("id")),j->showPage(5)));
+                            else if(config.optBoolean("selected"))error(new Exception(L10n.tr("当前配置已被选中，请先选择另一份配置后再删除")));
+                            else confirm(L10n.tr("删除配置"),L10n.tr("将删除“")+config.optString("name")+L10n.tr("”。正在运行使用的配置无法删除。"),()->task(L10n.tr("正在删除配置…"),()->api.delete("configs/"+config.optLong("id")),j->showPage(5)));
                         }).show());
             }
         });
@@ -547,15 +553,15 @@ public final class MainActivity extends Activity {
     }
     private void formHeading(LinearLayout parent,String title){TextView heading=text(title,17,accent);heading.setPadding(0,dp(16),0,dp(8));parent.addView(heading);}
     private void configForm(JSONObject existing,JSONObject source) throws Exception {
-        if(source==null)throw new Exception("配置解析失败，请先检查原配置；未修改任何参数");
+        if(source==null)throw new Exception(L10n.tr("配置解析失败，请先检查原配置；未修改任何参数"));
         JSONObject original=new JSONObject(source.toString());LinearLayout fields=formFields();
-        EditText name=field(fields,"配置名称",existing==null?"新配置":existing.optString("name"),false,false);
+        EditText name=field(fields,L10n.tr("配置名称"),existing==null?L10n.tr("新配置"):existing.optString("name"),false,false);
         Map<String,EditText> inputs=new LinkedHashMap<>();Map<String,Switch> toggles=new LinkedHashMap<>();
         Map<String,Spinner> selects=new LinkedHashMap<>();
         String[][] definitions={
-            {"连接与探测","checkInterval","检查间隔（如 50s）","checkTolerance","切换容差（如 50ms）","tcpCheckUrl","TCP 探测地址 · 每行一项","udpCheckDns","UDP DNS 探测地址 · 每行一项","tcpCheckHttpMethod","HTTP 探测方法","sniffingTimeout","流量嗅探超时"},
-            {"拨号与日志","dialMode","拨号模式","logLevel","日志级别","fallbackResolver","备用 DNS 地址","tlsImplementation","TLS 实现","utlsImitate","uTLS 客户端指纹","bandwidthMaxTx","最大上传带宽","bandwidthMaxRx","最大下载带宽"},
-            {"接口与兼容","wanInterface","WAN 接口 · 每行一项","lanInterface","LAN 接口 · 每行一项","allowInsecure","允许不安全 TLS","tproxyPortProtect","保护透明代理端口","disableWaitingNetwork","不等待网络就绪","enableLocalTcpFastRedirect","本机 TCP 快速重定向","autoConfigKernelParameter","自动设置内核参数","mptcp","启用 MPTCP"}
+            {L10n.tr("连接与探测"),"checkInterval",L10n.tr("检查间隔（如 50s）"),"checkTolerance",L10n.tr("切换容差（如 50ms）"),"tcpCheckUrl",L10n.tr("TCP 探测地址 · 每行一项"),"udpCheckDns",L10n.tr("UDP DNS 探测地址 · 每行一项"),"tcpCheckHttpMethod",L10n.tr("HTTP 探测方法"),"sniffingTimeout",L10n.tr("流量嗅探超时")},
+            {L10n.tr("拨号与日志"),"dialMode",L10n.tr("拨号模式"),"logLevel",L10n.tr("日志级别"),"fallbackResolver",L10n.tr("备用 DNS 地址"),"tlsImplementation",L10n.tr("TLS 实现"),"utlsImitate",L10n.tr("uTLS 客户端指纹"),"bandwidthMaxTx",L10n.tr("最大上传带宽"),"bandwidthMaxRx",L10n.tr("最大下载带宽")},
+            {L10n.tr("接口与兼容"),"wanInterface",L10n.tr("WAN 接口 · 每行一项"),"lanInterface",L10n.tr("LAN 接口 · 每行一项"),"allowInsecure",L10n.tr("允许不安全 TLS"),"tproxyPortProtect",L10n.tr("保护透明代理端口"),"disableWaitingNetwork",L10n.tr("不等待网络就绪"),"enableLocalTcpFastRedirect",L10n.tr("本机 TCP 快速重定向"),"autoConfigKernelParameter",L10n.tr("自动设置内核参数"),"mptcp",L10n.tr("启用 MPTCP")}
         };
         for(String[] section:definitions){formHeading(fields,section[0]);for(int i=1;i<section.length;i+=2){
             String key=section[i],label=section[i+1];if(!original.has(key))continue;Object value=original.get(key);
@@ -565,10 +571,10 @@ public final class MainActivity extends Activity {
             else if(key.equals("tcpCheckHttpMethod"))selects.put(key,choices(fields,label,value.toString(),new String[]{"HEAD","GET"}));
             else inputs.put(key,field(fields,label,value instanceof JSONArray?join((JSONArray)value):value.toString(),value instanceof JSONArray,false));
         }}
-        hint(fields,"透明代理端口、路由标记及其他参数沿用原值。保存不会自动切换当前连接。");
-        form(existing==null?"新建配置":"编辑配置",fields,()->{
+        hint(fields,L10n.tr("透明代理端口、路由标记及其他参数沿用原值。保存不会自动切换当前连接。"));
+        form(existing==null?L10n.tr("新建配置"):L10n.tr("编辑配置"),fields,()->{
             try{
-                String title=name.getText().toString().trim();if(title.isEmpty())throw new Exception("请填写配置名称");
+                String title=name.getText().toString().trim();if(title.isEmpty())throw new Exception(L10n.tr("请填写配置名称"));
                 JSONObject edited=new JSONObject(original.toString());
                 for(Map.Entry<String,EditText> entry:inputs.entrySet()){
                     String key=entry.getKey(),value=entry.getValue().getText().toString().trim();
@@ -578,12 +584,12 @@ public final class MainActivity extends Activity {
                 for(Map.Entry<String,Switch> entry:toggles.entrySet())edited.put(entry.getKey(),entry.getValue().isChecked());
                 for(Map.Entry<String,Spinner> entry:selects.entrySet())edited.put(entry.getKey(),entry.getValue().getSelectedItem().toString());
                 JSONObject body=new JSONObject().put("name",title).put("parsedGlobal",edited);
-                task("正在校验并保存配置…",()->{
+                task(L10n.tr("正在校验并保存配置…"),()->{
                     if(existing==null)return api.post("configs",body);
                     JSONObject latest=api.get("configs/"+existing.getLong("id"));
-                    if(latest.optLong("version")!=existing.optLong("version"))throw new Exception("配置已被其他页面修改，请取消后刷新再编辑");
+                    if(latest.optLong("version")!=existing.optLong("version"))throw new Exception(L10n.tr("配置已被其他页面修改，请取消后刷新再编辑"));
                     return api.patch("configs/"+existing.getLong("id"),body);
-                },j->{showPage(5);Toast.makeText(this,"已保存，应用后生效",Toast.LENGTH_LONG).show();});
+                },j->{showPage(5);Toast.makeText(this,L10n.tr("已保存，应用后生效"),Toast.LENGTH_LONG).show();});
             }catch(Exception e){error(e);}
         });
     }
@@ -591,114 +597,114 @@ public final class MainActivity extends Activity {
     // Native group workspace and per-membership changes preserve unrelated filters.
     private static final String[] POLICIES={"min_moving_avg","min_avg10","min","random","fixed"};
     private static final String[] POLICY_LABELS={"平滑延迟优选","最近十次平均优选","最低延迟","随机选择","固定单节点"};
-    private String policyLabel(String key){for(int i=0;i<POLICIES.length;i++)if(POLICIES[i].equals(key))return POLICY_LABELS[i];return key;}
+    private String policyLabel(String key){for(int i=0;i<POLICIES.length;i++)if(POLICIES[i].equals(key))return L10n.tr(POLICY_LABELS[i]);return key;}
     private void loadGroups(){
-        resourceHeading(3,"把候选节点组织成适合你的出口。");
-        LinearLayout top=card("代理出口");hint(top,"导入节点后，请在管理成员中添加节点或关联订阅，并在路由中引用此群组。编辑后在配置页应用，使修改生效。");
-        paired(top,"新建群组",()->groupForm(null),"刷新",()->showPage(6));
-        task("正在读取群组…",()->api.get("groups?summary=true"),result->{
-            JSONArray groups=items(result);if(groups.length()==0)hint(card("还没有群组"),"新建群组，再添加节点或订阅。");
+        resourceHeading(3,L10n.tr("把候选节点组织成适合你的出口。"));
+        LinearLayout top=card(L10n.tr("代理出口"));hint(top,L10n.tr("导入节点后，请在管理成员中添加节点或关联订阅，并在路由中引用此群组。编辑后在配置页应用，使修改生效。"));
+        paired(top,L10n.tr("新建群组"),()->groupForm(null),L10n.tr("刷新"),()->showPage(6));
+        task(L10n.tr("正在读取群组…"),()->api.get("groups?summary=true"),result->{
+            JSONArray groups=items(result);if(groups.length()==0)hint(card(L10n.tr("还没有群组")),L10n.tr("新建群组，再添加节点或订阅。"));
             for(int i=0;i<groups.length();i++){
-                JSONObject group=groups.getJSONObject(i);LinearLayout c=card(group.optString("name","未命名群组"));
+                JSONObject group=groups.getJSONObject(i);LinearLayout c=card(group.optString("name",L10n.tr("未命名群组")));
                 c.addView(text(policyLabel(group.optString("policy")),14,accent));
-                hint(c,group.optInt("nodeCount")+" 个直接节点  ·  "+group.optInt("subscriptionCount")+" 个订阅  ·  "+group.optInt("materializedCandidateCount")+" 个候选");
+                hint(c,group.optInt("nodeCount")+L10n.tr(" 个直接节点  ·  ")+group.optInt("subscriptionCount")+L10n.tr(" 个订阅  ·  ")+group.optInt("materializedCandidateCount")+L10n.tr(" 个候选"));
                 JSONObject selected=group.optJSONObject("runtimeSelectedNode"),best=group.optJSONObject("bestNode");
-                if(selected!=null)hint(c,"运行时出口  "+selected.optString("name","—"));
-                else if(best!=null)hint(c,"最近探测优选  "+best.optString("name","—"));
-                paired(c,"管理成员",()->groupDetails(group.optLong("id")),"编辑策略",()->task("正在读取策略…",()->api.get("groups/"+group.optLong("id")),this::groupForm));
+                if(selected!=null)hint(c,L10n.tr("运行时出口  ")+selected.optString("name","—"));
+                else if(best!=null)hint(c,L10n.tr("最近探测优选  ")+best.optString("name","—"));
+                paired(c,L10n.tr("管理成员"),()->groupDetails(group.optLong("id")),L10n.tr("编辑策略"),()->task(L10n.tr("正在读取策略…"),()->api.get("groups/"+group.optLong("id")),this::groupForm));
             }
         });
     }
     private void groupForm(JSONObject group){
-        LinearLayout fields=formFields();EditText name=field(fields,"群组名称",group==null?"":group.optString("name"),false,false);
-        hint(fields,"出口选择策略");Spinner policy=new Spinner(this);policy.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,POLICY_LABELS));
+        LinearLayout fields=formFields();EditText name=field(fields,L10n.tr("群组名称"),group==null?"":group.optString("name"),false,false);
+        hint(fields,L10n.tr("出口选择策略"));Spinner policy=new Spinner(this);policy.setAdapter(new ArrayAdapter<String>(this,android.R.layout.simple_spinner_dropdown_item,L10n.labels(POLICY_LABELS)));
         int selected=0;for(int i=0;group!=null&&i<POLICIES.length;i++)if(POLICIES[i].equals(group.optString("policy")))selected=i;
         policy.setSelection(selected);fields.addView(policy,new LinearLayout.LayoutParams(-1,dp(48)));
-        hint(fields,"固定策略只允许一个候选节点；自动优选依据探测结果选择出口。");
-        if(group!=null)hint(fields,"修改名称后，引用此群组的路由规则也需要同步。");
+        hint(fields,L10n.tr("固定策略只允许一个候选节点；自动优选依据探测结果选择出口。"));
+        if(group!=null)hint(fields,L10n.tr("修改名称后，引用此群组的路由规则也需要同步。"));
         JSONArray params=group==null?new JSONArray():group.optJSONArray("policyParams");StringBuilder existing=new StringBuilder();
         if(params!=null)for(int i=0;i<params.length();i++){JSONObject param=params.optJSONObject(i);if(param!=null){if(existing.length()>0)existing.append('\n');existing.append(param.optString("key")).append('=').append(param.optString("val"));}}
-        EditText options=field(fields,"可选策略参数 · 每行 key=value",existing.toString(),true,false);
-        form(group==null?"新建群组":"编辑群组",fields,()->{
+        EditText options=field(fields,L10n.tr("可选策略参数 · 每行 key=value"),existing.toString(),true,false);
+        form(group==null?L10n.tr("新建群组"):L10n.tr("编辑群组"),fields,()->{
             try{
-                String title=name.getText().toString().trim();if(!title.matches("[\\p{L}_][\\p{L}\\p{N}_-]*"))throw new Exception("名称可使用中英文字、数字、下划线或连字符，以文字或下划线开头");
+                String title=name.getText().toString().trim();if(!title.matches("[\\p{L}_][\\p{L}\\p{N}_-]*"))throw new Exception(L10n.tr("名称可使用中英文字、数字、下划线或连字符，以文字或下划线开头"));
                 JSONArray values=new JSONArray();HashSet<String> keys=new HashSet<>();
                 for(String line:options.getText().toString().split("\\r?\\n"))if(!line.trim().isEmpty()){
-                    int split=line.indexOf('=');if(split<1)throw new Exception("策略参数请按 key=value 填写");
-                    String key=line.substring(0,split).trim();if(!keys.add(key))throw new Exception("策略参数不能重复："+key);
+                    int split=line.indexOf('=');if(split<1)throw new Exception(L10n.tr("策略参数请按 key=value 填写"));
+                    String key=line.substring(0,split).trim();if(!keys.add(key))throw new Exception(L10n.tr("策略参数不能重复：")+key);
                     values.put(new JSONObject().put("key",key).put("val",line.substring(split+1).trim()));
                 }
                 JSONObject body=new JSONObject().put("name",title).put("policy",POLICIES[policy.getSelectedItemPosition()]).put("policyParams",values);
-                task("正在保存群组…",()->{
+                task(L10n.tr("正在保存群组…"),()->{
                     if(group==null)return api.post("groups",body);
                     JSONObject latest=api.get("groups/"+group.getLong("id"));
-                    if(latest.optLong("version")!=group.optLong("version"))throw new Exception("群组已被修改，请取消后刷新再编辑");
+                    if(latest.optLong("version")!=group.optLong("version"))throw new Exception(L10n.tr("群组已被修改，请取消后刷新再编辑"));
                     return api.patch("groups/"+group.getLong("id"),body);
-                },j->{showPage(6);Toast.makeText(this,"已保存，应用后生效",Toast.LENGTH_LONG).show();});
+                },j->{showPage(6);Toast.makeText(this,L10n.tr("已保存，应用后生效"),Toast.LENGTH_LONG).show();});
             }catch(Exception e){error(e);}
         });
     }
     private void groupDetails(long id){
-        task("正在读取群组成员…",()->api.get("groups/"+id),group->{
-            content.removeAllViews();actions.clear();generation++;detailGroupId=id;pageTitle.setText(group.optString("name","群组"));
-            LinearLayout top=card("群组策略");top.addView(text(policyLabel(group.optString("policy")),17,accent));
-            hint(top,"成员变更保存到群组，应用配置后更新代理出口。");paired(top,"编辑策略",()->groupForm(group),"返回群组",()->showPage(6));
-            LinearLayout nodes=card("直接节点");JSONArray nodeList=group.optJSONArray("nodes");
-            hint(nodes,(nodeList==null?0:nodeList.length())+" 个节点，独立于订阅筛选");button(nodes,"添加节点",false,()->pickGroupNodes(group));
+        task(L10n.tr("正在读取群组成员…"),()->api.get("groups/"+id),group->{
+            content.removeAllViews();actions.clear();generation++;detailGroupId=id;pageTitle.setText(group.optString("name",L10n.tr("群组")));
+            LinearLayout top=card(L10n.tr("群组策略"));top.addView(text(policyLabel(group.optString("policy")),17,accent));
+            hint(top,L10n.tr("成员变更保存到群组，应用配置后更新代理出口。"));paired(top,L10n.tr("编辑策略"),()->groupForm(group),L10n.tr("返回群组"),()->showPage(6));
+            LinearLayout nodes=card(L10n.tr("直接节点"));JSONArray nodeList=group.optJSONArray("nodes");
+            hint(nodes,(nodeList==null?0:nodeList.length())+L10n.tr(" 个节点，独立于订阅筛选"));button(nodes,L10n.tr("添加节点"),false,()->pickGroupNodes(group));
             if(nodeList!=null)for(int i=0;i<nodeList.length();i++){
-                JSONObject node=nodeList.getJSONObject(i);LinearLayout c=card(node.optString("name","未命名节点"));hint(c,node.optString("protocol").toUpperCase(Locale.ROOT));
-                button(c,"移出群组",false,()->confirm("移出节点","只移出当前群组，保留节点本身。",()->task("正在移出节点…",()->api.delete("groups/"+id+"/nodes",new JSONObject().put("nodeIds",new JSONArray().put(node.getLong("id")))),j->groupDetails(id)))).setTextColor(appearance.danger);
+                JSONObject node=nodeList.getJSONObject(i);LinearLayout c=card(node.optString("name",L10n.tr("未命名节点")));hint(c,node.optString("protocol").toUpperCase(Locale.ROOT));
+                button(c,L10n.tr("移出群组"),false,()->confirm(L10n.tr("移出节点"),L10n.tr("只移出当前群组，保留节点本身。"),()->task(L10n.tr("正在移出节点…"),()->api.delete("groups/"+id+"/nodes",new JSONObject().put("nodeIds",new JSONArray().put(node.getLong("id")))),j->groupDetails(id)))).setTextColor(appearance.danger);
             }
-            LinearLayout subs=card("订阅成员");JSONArray subscriptions=group.optJSONArray("subscriptions");
-            hint(subs,(subscriptions==null?0:subscriptions.length())+" 个订阅，每份订阅可单独筛选节点");button(subs,"添加订阅",false,()->pickGroupSubscription(id));
+            LinearLayout subs=card(L10n.tr("订阅成员"));JSONArray subscriptions=group.optJSONArray("subscriptions");
+            hint(subs,(subscriptions==null?0:subscriptions.length())+L10n.tr(" 个订阅，每份订阅可单独筛选节点"));button(subs,L10n.tr("添加订阅"),false,()->pickGroupSubscription(id));
             if(subscriptions!=null)for(int i=0;i<subscriptions.length();i++){
-                JSONObject subscription=subscriptions.getJSONObject(i);LinearLayout c=card(subscription.optString("tag","未命名订阅"));
-                String filter=subscription.isNull("nameFilterRegex")?"":subscription.optString("nameFilterRegex");hint(c,"筛选  "+(filter.isEmpty()?"全部节点":filter));hint(c,"匹配 "+subscription.optInt("matchedCount")+" 个节点");
-                paired(c,"筛选与节点",()->subscriptionMembership(id,subscription),"移出订阅",()->confirm("移出订阅","只解除与当前群组的关联，保留订阅和节点。",()->task("正在移出订阅…",()->api.delete("groups/"+id+"/subscriptions",new JSONObject().put("subscriptionIds",new JSONArray().put(subscription.getLong("subscriptionId")))),j->groupDetails(id))))[1].setTextColor(appearance.danger);
+                JSONObject subscription=subscriptions.getJSONObject(i);LinearLayout c=card(subscription.optString("tag",L10n.tr("未命名订阅")));
+                String filter=subscription.isNull("nameFilterRegex")?"":subscription.optString("nameFilterRegex");hint(c,L10n.tr("筛选  ")+(filter.isEmpty()?L10n.tr("全部节点"):filter));hint(c,L10n.tr("匹配 ")+subscription.optInt("matchedCount")+L10n.tr(" 个节点"));
+                paired(c,L10n.tr("筛选与节点"),()->subscriptionMembership(id,subscription),L10n.tr("移出订阅"),()->confirm(L10n.tr("移出订阅"),L10n.tr("只解除与当前群组的关联，保留订阅和节点。"),()->task(L10n.tr("正在移出订阅…"),()->api.delete("groups/"+id+"/subscriptions",new JSONObject().put("subscriptionIds",new JSONArray().put(subscription.getLong("subscriptionId")))),j->groupDetails(id))))[1].setTextColor(appearance.danger);
             }
-            button(content,"删除群组",false,()->confirm("删除群组","将删除群组及其成员关联，节点和订阅仍保留。正在运行使用的群组无法删除。",()->task("正在删除群组…",()->api.delete("groups/"+id),j->showPage(6)))).setTextColor(appearance.danger);
+            button(content,L10n.tr("删除群组"),false,()->confirm(L10n.tr("删除群组"),L10n.tr("将删除群组及其成员关联，节点和订阅仍保留。正在运行使用的群组无法删除。"),()->task(L10n.tr("正在删除群组…"),()->api.delete("groups/"+id),j->showPage(6)))).setTextColor(appearance.danger);
             scroll.post(()->scroll.scrollTo(0,0));
         });
     }
     private void pickGroupNodes(JSONObject group){
-        task("正在读取可用节点…",()->{
+        task(L10n.tr("正在读取可用节点…"),()->{
             JSONArray all=items(api.get("nodes")),subscribed=items(api.get("nodes?independent=false"));for(int i=0;i<subscribed.length();i++)all.put(subscribed.get(i));return all;
         },all->{
             HashSet<Long> attached=new HashSet<>();JSONArray current=group.optJSONArray("nodes");if(current!=null)for(int i=0;i<current.length();i++)attached.add(current.getJSONObject(i).getLong("id"));
             ArrayList<JSONObject> available=new ArrayList<>();for(int i=0;i<all.length();i++)if(!attached.contains(all.getJSONObject(i).getLong("id")))available.add(all.getJSONObject(i));
-            if(available.isEmpty()){Toast.makeText(this,"没有可添加的节点",Toast.LENGTH_SHORT).show();return;}
-            String[] labels=new String[available.size()];boolean[] checked=new boolean[labels.length];for(int i=0;i<labels.length;i++)labels[i]=available.get(i).optString("name","未命名节点");
-            AlertDialog picker=new AlertDialog.Builder(this).setTitle("添加节点").setMultiChoiceItems(labels,checked,(d,index,on)->checked[index]=on).setNegativeButton("取消",null).setPositiveButton("添加",null).create();
+            if(available.isEmpty()){Toast.makeText(this,L10n.tr("没有可添加的节点"),Toast.LENGTH_SHORT).show();return;}
+            String[] labels=new String[available.size()];boolean[] checked=new boolean[labels.length];for(int i=0;i<labels.length;i++)labels[i]=available.get(i).optString("name",L10n.tr("未命名节点"));
+            AlertDialog picker=new AlertDialog.Builder(this).setTitle(L10n.tr("添加节点")).setMultiChoiceItems(labels,checked,(d,index,on)->checked[index]=on).setNegativeButton(L10n.tr("取消"),null).setPositiveButton(L10n.tr("添加"),null).create();
             picker.setOnShowListener(d->picker.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener(v->{
                 if(busy)return;JSONArray ids=new JSONArray();for(int i=0;i<checked.length;i++)if(checked[i])ids.put(available.get(i).optLong("id"));
-                if(ids.length()==0){Toast.makeText(this,"请至少选择一个节点",Toast.LENGTH_SHORT).show();return;}
-                task("正在添加节点…",()->api.post("groups/"+group.getLong("id")+"/nodes",new JSONObject().put("nodeIds",ids)),j->{picker.dismiss();groupDetails(group.getLong("id"));});
+                if(ids.length()==0){Toast.makeText(this,L10n.tr("请至少选择一个节点"),Toast.LENGTH_SHORT).show();return;}
+                task(L10n.tr("正在添加节点…"),()->api.post("groups/"+group.getLong("id")+"/nodes",new JSONObject().put("nodeIds",ids)),j->{picker.dismiss();groupDetails(group.getLong("id"));});
             }));picker.show();
         });
     }
     private void pickGroupSubscription(long groupId){
-        task("正在读取订阅…",()->api.get("subscriptions"),result->{
-            JSONArray list=items(result);if(list.length()==0){Toast.makeText(this,"请先在订阅页添加订阅",Toast.LENGTH_SHORT).show();return;}
-            String[] labels=new String[list.length()];for(int i=0;i<labels.length;i++)labels[i]=list.getJSONObject(i).optString("tag","未命名订阅");
-            new AlertDialog.Builder(this).setTitle("选择订阅").setItems(labels,(d,index)->{
+        task(L10n.tr("正在读取订阅…"),()->api.get("subscriptions"),result->{
+            JSONArray list=items(result);if(list.length()==0){Toast.makeText(this,L10n.tr("请先在订阅页添加订阅"),Toast.LENGTH_SHORT).show();return;}
+            String[] labels=new String[list.length()];for(int i=0;i<labels.length;i++)labels[i]=list.getJSONObject(i).optString("tag",L10n.tr("未命名订阅"));
+            new AlertDialog.Builder(this).setTitle(L10n.tr("选择订阅")).setItems(labels,(d,index)->{
                 try{
                     long id=list.getJSONObject(index).getLong("id");
-                    task("正在读取订阅关联…",()->api.get("groups/"+groupId),group->{
+                    task(L10n.tr("正在读取订阅关联…"),()->api.get("groups/"+groupId),group->{
                         JSONArray attached=group.optJSONArray("subscriptions");
                         if(attached!=null)for(int i=0;i<attached.length();i++){JSONObject sub=attached.getJSONObject(i);if(sub.optLong("subscriptionId")==id){subscriptionMembership(groupId,sub);return;}}
                         subscriptionMembership(groupId,new JSONObject().put("subscriptionId",id).put("tag",labels[index]));
                     });
                 }catch(Exception e){error(e);}
-            }).setNegativeButton("取消",null).show();
+            }).setNegativeButton(L10n.tr("取消"),null).show();
         });
     }
     private void subscriptionMembership(long groupId,JSONObject subscription){
-        LinearLayout fields=formFields();hint(fields,subscription.optString("tag","订阅"));
-        EditText filter=field(fields,"节点名称筛选 · 正则表达式，留空表示全部",subscription.isNull("nameFilterRegex")?"":subscription.optString("nameFilterRegex"),false,false);
-        JSONArray matched=subscription.optJSONArray("matchedNodes");if(matched!=null){formHeading(fields,"当前匹配节点");for(int i=0;i<matched.length();i++)hint(fields,matched.optJSONObject(i).optString("name","未命名节点"));}
-        form("订阅筛选",fields,()->{
+        LinearLayout fields=formFields();hint(fields,subscription.optString("tag",L10n.tr("订阅")));
+        EditText filter=field(fields,L10n.tr("节点名称筛选 · 正则表达式，留空表示全部"),subscription.isNull("nameFilterRegex")?"":subscription.optString("nameFilterRegex"),false,false);
+        JSONArray matched=subscription.optJSONArray("matchedNodes");if(matched!=null){formHeading(fields,L10n.tr("当前匹配节点"));for(int i=0;i<matched.length();i++)hint(fields,matched.optJSONObject(i).optString("name",L10n.tr("未命名节点")));}
+        form(L10n.tr("订阅筛选"),fields,()->{
             try{String expression=filter.getText().toString();JSONObject body=new JSONObject().put("subscriptionIds",new JSONArray().put(subscription.getLong("subscriptionId"))).put("nameFilterRegex",expression.isEmpty()?JSONObject.NULL:expression);
-                task("正在保存订阅筛选…",()->api.post("groups/"+groupId+"/subscriptions",body),j->groupDetails(groupId));
+                task(L10n.tr("正在保存订阅筛选…"),()->api.post("groups/"+groupId+"/subscriptions",body),j->groupDetails(groupId));
             }catch(Exception e){error(e);}
         });
     }
@@ -706,40 +712,40 @@ public final class MainActivity extends Activity {
     private int sectionPage(String kind){return kind.equals("dns")?7:8;}
     private String sectionKey(String kind){return kind.equals("dns")?"dns":"routing";}
     private void loadSections(String kind){
-        boolean dns=kind.equals("dns");int target=sectionPage(kind);resourceHeading(dns?1:2,dns?"为每一次查询，安排合适的解析路径。":"从第一条规则到最终出口，清晰掌握流量去向。");
-        LinearLayout controls=card(dns?"解析方案":"路由方案");hint(controls,"选择与编辑分开保存，应用配置后才更新当前连接。");
-        paired(controls,dns?"新建 DNS":"新建路由",()->task("正在准备方案…",()->api.get(kind),result->{
+        boolean dns=kind.equals("dns");int target=sectionPage(kind);resourceHeading(dns?1:2,dns?L10n.tr("为每一次查询，安排合适的解析路径。"):L10n.tr("从第一条规则到最终出口，清晰掌握流量去向。"));
+        LinearLayout controls=card(dns?L10n.tr("解析方案"):L10n.tr("路由方案"));hint(controls,L10n.tr("选择与编辑分开保存，应用配置后才更新当前连接。"));
+        paired(controls,dns?L10n.tr("新建 DNS"):L10n.tr("新建路由"),()->task(L10n.tr("正在准备方案…"),()->api.get(kind),result->{
             JSONArray list=items(result);JSONObject template=null;for(int i=0;i<list.length();i++)if(list.getJSONObject(i).optBoolean("selected"))template=list.getJSONObject(i);
             if(template==null&&list.length()>0)template=list.getJSONObject(0);sectionNameForm(kind,template,true);
-        }),"刷新",()->showPage(target));
-        task("正在读取方案…",()->api.get(kind),result->{
-            JSONArray list=items(result);if(list.length()==0)hint(card("还没有方案"),"新建一份方案，再添加上游或规则。");
+        }),L10n.tr("刷新"),()->showPage(target));
+        task(L10n.tr("正在读取方案…"),()->api.get(kind),result->{
+            JSONArray list=items(result);if(list.length()==0)hint(card(L10n.tr("还没有方案")),L10n.tr("新建一份方案，再添加上游或规则。"));
             for(int i=0;i<list.length();i++){
-                JSONObject section=list.getJSONObject(i);LinearLayout c=card(section.optString("name","未命名方案"));
-                c.addView(text(section.optBoolean("selected")?"● 已选方案":"备用方案",12,section.optBoolean("selected")?accent:muted));
+                JSONObject section=list.getJSONObject(i);LinearLayout c=card(section.optString("name",L10n.tr("未命名方案")));
+                c.addView(text(section.optBoolean("selected")?L10n.tr("● 已选方案"):L10n.tr("备用方案"),12,section.optBoolean("selected")?accent:muted));
                 String raw=section.optString(sectionKey(kind));
-                try{if(dns){String wrapped=ResourceText.wrap("dns",raw);ResourceText.Block area=ResourceText.path(wrapped,"dns","upstream");hint(c,(area==null?0:ResourceText.entries(wrapped,area.open+1,area.close).size())+" 个上游  ·  "+ResourceText.rules(wrapped,true,"request").size()+" 项查询规则");}
-                    else hint(c,ResourceText.rules(raw,false,"").size()+" 项规则  ·  自上而下匹配");
-                }catch(Exception e){hint(c,"自定义方案 · 可在完整文本中检查");}
-                paired(c,dns?"管理解析":"管理规则",()->sectionDetails(kind,section.optLong("id")),"更多",()->sectionMenu(kind,section));
+                try{if(dns){String wrapped=ResourceText.wrap("dns",raw);ResourceText.Block area=ResourceText.path(wrapped,"dns","upstream");hint(c,(area==null?0:ResourceText.entries(wrapped,area.open+1,area.close).size())+L10n.tr(" 个上游  ·  ")+ResourceText.rules(wrapped,true,"request").size()+L10n.tr(" 项查询规则"));}
+                    else hint(c,ResourceText.rules(raw,false,"").size()+L10n.tr(" 项规则  ·  自上而下匹配"));
+                }catch(Exception e){hint(c,L10n.tr("自定义方案 · 可在完整文本中检查"));}
+                paired(c,dns?L10n.tr("管理解析"):L10n.tr("管理规则"),()->sectionDetails(kind,section.optLong("id")),L10n.tr("更多"),()->sectionMenu(kind,section));
             }
         });
     }
     private void sectionMenu(String kind,JSONObject section){
-        new AlertDialog.Builder(this).setTitle(section.optString("name")).setItems(new String[]{"选择此方案","复制方案","重命名","删除方案"},(d,index)->{
-            if(index==0)task("正在选择方案…",()->api.post(kind+"/"+section.optLong("id")+"/select",new JSONObject()),j->{showPage(sectionPage(kind));Toast.makeText(this,"已选择，应用配置后生效",Toast.LENGTH_LONG).show();});
+        new AlertDialog.Builder(this).setTitle(section.optString("name")).setItems(new String[]{L10n.tr("选择此方案"),L10n.tr("复制方案"),L10n.tr("重命名"),L10n.tr("删除方案")},(d,index)->{
+            if(index==0)task(L10n.tr("正在选择方案…"),()->api.post(kind+"/"+section.optLong("id")+"/select",new JSONObject()),j->{showPage(sectionPage(kind));Toast.makeText(this,L10n.tr("已选择，应用配置后生效"),Toast.LENGTH_LONG).show();});
             else if(index==1)sectionNameForm(kind,section,true);
             else if(index==2)sectionNameForm(kind,section,false);
-            else if(section.optBoolean("selected"))error(new Exception("请先选择其他方案，再删除当前方案"));
-            else confirm("删除方案","将删除“"+section.optString("name")+"”。",()->task("正在删除方案…",()->api.delete(kind+"/"+section.optLong("id")),j->showPage(sectionPage(kind))));
+            else if(section.optBoolean("selected"))error(new Exception(L10n.tr("请先选择其他方案，再删除当前方案")));
+            else confirm(L10n.tr("删除方案"),L10n.tr("将删除“")+section.optString("name")+"”。",()->task(L10n.tr("正在删除方案…"),()->api.delete(kind+"/"+section.optLong("id")),j->showPage(sectionPage(kind))));
         }).show();
     }
     private void sectionNameForm(String kind,JSONObject template,boolean copy){
-        LinearLayout fields=formFields();EditText name=field(fields,"方案名称",copy?"新"+(kind.equals("dns")?"DNS":"路由")+"方案":template.optString("name"),false,false);
-        if(copy)hint(fields,template==null?"创建后可添加上游与规则。":"以“"+template.optString("name")+"”为模板，原方案保持不变。");
-        form(copy?"新建方案":"重命名",fields,()->{
-            String title=name.getText().toString().trim();if(title.isEmpty()){error(new Exception("请填写方案名称"));return;}
-            task("正在保存方案…",()->{
+        LinearLayout fields=formFields();EditText name=field(fields,L10n.tr("方案名称"),copy?L10n.tr("新")+(kind.equals("dns")?"DNS":L10n.tr("路由"))+L10n.tr("方案"):template.optString("name"),false,false);
+        if(copy)hint(fields,template==null?L10n.tr("创建后可添加上游与规则。"):L10n.tr("以“")+template.optString("name")+L10n.tr("”为模板，原方案保持不变。"));
+        form(copy?L10n.tr("新建方案"):L10n.tr("重命名"),fields,()->{
+            String title=name.getText().toString().trim();if(title.isEmpty()){error(new Exception(L10n.tr("请填写方案名称")));return;}
+            task(L10n.tr("正在保存方案…"),()->{
                 JSONObject body=new JSONObject().put("name",title);
                 if(copy){String raw=template==null?(kind.equals("dns")?"dns {\n upstream { resolver: 'udp://223.5.5.5:53' }\n routing { request { fallback: resolver } }\n}\n":"fallback: direct\n"):template.getString(sectionKey(kind));validateSection(kind,raw);body.put(sectionKey(kind),raw);return api.post(kind,body);}
                 ensureSectionVersion(kind,template);return api.patch(kind+"/"+template.getLong("id"),body);
@@ -747,7 +753,7 @@ public final class MainActivity extends Activity {
         });
     }
     private void ensureSectionVersion(String kind,JSONObject section)throws Exception{
-        JSONObject latest=api.get(kind+"/"+section.getLong("id"));if(latest.optLong("version")!=section.optLong("version"))throw new Exception("方案已被其他页面修改，请取消并刷新后重试");
+        JSONObject latest=api.get(kind+"/"+section.getLong("id"));if(latest.optLong("version")!=section.optLong("version"))throw new Exception(L10n.tr("方案已被其他页面修改，请取消并刷新后重试"));
     }
     private void validateSection(String kind,String raw)throws Exception{
         String full=api.get("user/me/dae-config-file").getString("content"),key=sectionKey(kind);
@@ -756,22 +762,22 @@ public final class MainActivity extends Activity {
         api.post("user/me/dae-config-file/preview",new JSONObject().put("content",candidate));
     }
     private void saveSection(String kind,JSONObject section,String raw){
-        task("正在校验并保存…",()->{validateSection(kind,raw);ensureSectionVersion(kind,section);return api.patch(kind+"/"+section.getLong("id"),new JSONObject().put(sectionKey(kind),raw));},j->{sectionDetails(kind,section.optLong("id"));Toast.makeText(this,"已保存，应用配置后生效",Toast.LENGTH_LONG).show();});
+        task(L10n.tr("正在校验并保存…"),()->{validateSection(kind,raw);ensureSectionVersion(kind,section);return api.patch(kind+"/"+section.getLong("id"),new JSONObject().put(sectionKey(kind),raw));},j->{sectionDetails(kind,section.optLong("id"));Toast.makeText(this,L10n.tr("已保存，应用配置后生效"),Toast.LENGTH_LONG).show();});
     }
     private void sectionDetails(String kind,long id){
-        task("正在读取方案…",()->new JSONObject().put("section",api.get(kind+"/"+id)).put("groups",api.get("groups?summary=true")),result->{
+        task(L10n.tr("正在读取方案…"),()->new JSONObject().put("section",api.get(kind+"/"+id)).put("groups",api.get("groups?summary=true")),result->{
             JSONObject section=result.getJSONObject("section");resourceGroups=items(result.getJSONObject("groups"));
             content.removeAllViews();actions.clear();generation++;detailSection=section;detailKind=kind;pageTitle.setText(section.optString("name"));
-            LinearLayout top=card(kind.equals("dns")?"DNS 解析":"流量路由");hint(top,section.optBoolean("selected")?"当前已选方案 · 修改后需应用配置":"备用方案 · 可先编辑再选择");
-            paired(top,"返回列表",()->showPage(sectionPage(kind)),"完整文本",()->sectionSourceForm(kind,section));
+            LinearLayout top=card(kind.equals("dns")?L10n.tr("DNS 解析"):L10n.tr("流量路由"));hint(top,section.optBoolean("selected")?L10n.tr("当前已选方案 · 修改后需应用配置"):L10n.tr("备用方案 · 可先编辑再选择"));
+            paired(top,L10n.tr("返回列表"),()->showPage(sectionPage(kind)),L10n.tr("完整文本"),()->sectionSourceForm(kind,section));
             try{if(kind.equals("dns"))dnsCards(section);else ruleCards(kind,section,"");}
-            catch(Exception e){hint(card("保留自定义内容"),"此方案包含复杂结构，可使用完整文本编辑；原文已保留。");}
+            catch(Exception e){hint(card(L10n.tr("保留自定义内容")),L10n.tr("此方案包含复杂结构，可使用完整文本编辑；原文已保留。"));}
             scroll.post(()->scroll.scrollTo(0,0));
         });
     }
     private void sectionSourceForm(String kind,JSONObject section){
-        LinearLayout fields=formFields();hint(fields,"高级语法可在这里编辑，保存前会检查完整配置。");EditText source=field(fields,"完整方案",section.optString(sectionKey(kind)),true,false);source.setTypeface(Typeface.MONOSPACE);
-        form("完整文本",fields,()->saveSection(kind,section,source.getText().toString()));
+        LinearLayout fields=formFields();hint(fields,L10n.tr("高级语法可在这里编辑，保存前会检查完整配置。"));EditText source=field(fields,L10n.tr("完整方案"),section.optString(sectionKey(kind)),true,false);source.setTypeface(Typeface.MONOSPACE);
+        form(L10n.tr("完整文本"),fields,()->saveSection(kind,section,source.getText().toString()));
     }
     private String[] upstream(ResourceText.Entry entry){
         java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?s)^([\\p{L}_][\\p{L}\\p{N}_-]*)\\s*:\\s*(['\"])(.*)\\2$").matcher(entry.text);
@@ -782,33 +788,33 @@ public final class MainActivity extends Activity {
         if(b!=null)for(ResourceText.Entry entry:ResourceText.entries(raw,b.open+1,b.close)){String[] value=upstream(entry);if(value!=null)aliases.add(value[0]);}return aliases;
     }
     private String endpointLabel(String value){
-        try{java.net.URI uri=new java.net.URI(value);if(uri.getRawQuery()!=null||uri.getRawUserInfo()!=null)return uri.getScheme()+"://"+(uri.getHost()==null?"上游地址":uri.getHost())+(uri.getPort()<0?"":":"+uri.getPort())+(uri.getPath()==null?"":uri.getPath());}catch(Exception ignored){}return value;
+        try{java.net.URI uri=new java.net.URI(value);if(uri.getRawQuery()!=null||uri.getRawUserInfo()!=null)return uri.getScheme()+"://"+(uri.getHost()==null?L10n.tr("上游地址"):uri.getHost())+(uri.getPort()<0?"":":"+uri.getPort())+(uri.getPath()==null?"":uri.getPath());}catch(Exception ignored){}return value;
     }
     private void dnsCards(JSONObject section){
-        String raw=ResourceText.wrap("dns",section.optString("dns"));LinearLayout heading=card("解析上游");hint(heading,"每个上游拥有独立名称，供查询规则选择。");button(heading,"添加上游",false,()->upstreamForm(section,null));
+        String raw=ResourceText.wrap("dns",section.optString("dns"));LinearLayout heading=card(L10n.tr("解析上游"));hint(heading,L10n.tr("每个上游拥有独立名称，供查询规则选择。"));button(heading,L10n.tr("添加上游"),false,()->upstreamForm(section,null));
         ResourceText.Block block=ResourceText.path(raw,"dns","upstream");
         if(block!=null)for(ResourceText.Entry entry:ResourceText.entries(raw,block.open+1,block.close)){
-            String[] values=upstream(entry);if(values==null){hint(card("自定义上游"),entry.text);continue;}
+            String[] values=upstream(entry);if(values==null){hint(card(L10n.tr("自定义上游")),entry.text);continue;}
             LinearLayout c=card(values[0]);hint(c,endpointLabel(values[1]));
-            paired(c,"编辑地址",()->upstreamForm(section,entry),"移除",()->{
+            paired(c,L10n.tr("编辑地址"),()->upstreamForm(section,entry),L10n.tr("移除"),()->{
                 for(String phase:new String[]{"request","response"})for(ResourceText.Entry rule:ResourceText.rules(raw,true,phase)){
                     String destination=rule.fallback()?rule.text.substring(rule.text.indexOf(':')+1).trim():rule.arrow()<0?"":rule.text.substring(rule.arrow()+2).trim();
-                    if(destination.equals(values[0])||destination.startsWith(values[0]+"(")){error(new Exception("此上游仍被规则引用，请先修改对应规则"));return;}
+                    if(destination.equals(values[0])||destination.startsWith(values[0]+"(")){error(new Exception(L10n.tr("此上游仍被规则引用，请先修改对应规则")));return;}
                 }
-                confirm("移除上游","将移除“"+values[0]+"”。",()->saveSection("dns",section,ResourceText.remove(raw,entry)));
+                confirm(L10n.tr("移除上游"),L10n.tr("将移除“")+values[0]+"”。",()->saveSection("dns",section,ResourceText.remove(raw,entry)));
             })[1].setTextColor(appearance.danger);
         }
         ruleCards("dns",section,"request");ruleCards("dns",section,"response");
     }
     private void upstreamForm(JSONObject section,ResourceText.Entry existing){
         String raw=ResourceText.wrap("dns",section.optString("dns"));String[] original=existing==null?null:upstream(existing);
-        LinearLayout fields=formFields();EditText alias=field(fields,"上游名称",original==null?"":original[0],false,false);if(existing!=null)alias.setEnabled(false);
-        EditText address=field(fields,"上游地址",original==null?"":original[1],false,false);hint(fields,"例如 udp://223.5.5.5:53 或 https://dns.google/dns-query。已有名称保持固定，避免影响引用。");
-        form(existing==null?"添加上游":"编辑上游",fields,()->{
-            try{String name=alias.getText().toString().trim(),url=address.getText().toString().trim();if(!name.matches("[A-Za-z_][A-Za-z0-9_-]*"))throw new Exception("名称请使用字母、数字、下划线或连字符");if(url.isEmpty()||url.indexOf('\n')>=0)throw new Exception("请填写单行上游地址");
+        LinearLayout fields=formFields();EditText alias=field(fields,L10n.tr("上游名称"),original==null?"":original[0],false,false);if(existing!=null)alias.setEnabled(false);
+        EditText address=field(fields,L10n.tr("上游地址"),original==null?"":original[1],false,false);hint(fields,L10n.tr("例如 udp://223.5.5.5:53 或 https://dns.google/dns-query。已有名称保持固定，避免影响引用。"));
+        form(existing==null?L10n.tr("添加上游"):L10n.tr("编辑上游"),fields,()->{
+            try{String name=alias.getText().toString().trim(),url=address.getText().toString().trim();if(!name.matches("[A-Za-z_][A-Za-z0-9_-]*"))throw new Exception(L10n.tr("名称请使用字母、数字、下划线或连字符"));if(url.isEmpty()||url.indexOf('\n')>=0)throw new Exception(L10n.tr("请填写单行上游地址"));
                 String line=name+": "+ResourceText.quoted(url),edited;
                 if(existing!=null)edited=ResourceText.replace(raw,existing,line);
-                else{if(dnsAliases(raw).contains(name))throw new Exception("上游名称已存在");String prepared=ResourceText.ensureDnsPath(raw,"upstream");ResourceText.Block b=ResourceText.path(prepared,"dns","upstream");edited=prepared.substring(0,b.close)+"\n  "+line+"\n"+prepared.substring(b.close);}
+                else{if(dnsAliases(raw).contains(name))throw new Exception(L10n.tr("上游名称已存在"));String prepared=ResourceText.ensureDnsPath(raw,"upstream");ResourceText.Block b=ResourceText.path(prepared,"dns","upstream");edited=prepared.substring(0,b.close)+"\n  "+line+"\n"+prepared.substring(b.close);}
                 saveSection("dns",section,edited);
             }catch(Exception e){error(e);}
         });
@@ -822,46 +828,46 @@ public final class MainActivity extends Activity {
         boolean dns=kind.equals("dns");String raw=dns?ResourceText.wrap("dns",section.optString("dns")):section.optString("routing");
         List<ResourceText.Entry> all=ResourceText.rules(raw,dns,phase);ArrayList<ResourceText.Entry> rules=new ArrayList<>();ResourceText.Entry fallback=null;
         for(ResourceText.Entry entry:all){if(entry.fallback())fallback=entry;else rules.add(entry);}
-        LinearLayout head=card(dns?(phase.equals("request")?"查询规则":"响应规则"):"匹配规则");hint(head,dns?(phase.equals("request")?"按查询条件选择解析上游。":"对返回结果接受、拒绝或重新选择上游。"):"自上而下匹配，靠前的规则优先。");button(head,"添加规则",false,()->ruleForm(kind,section,phase,null,false));
+        LinearLayout head=card(dns?(phase.equals("request")?L10n.tr("查询规则"):L10n.tr("响应规则")):L10n.tr("匹配规则"));hint(head,dns?(phase.equals("request")?L10n.tr("按查询条件选择解析上游。"):L10n.tr("对返回结果接受、拒绝或重新选择上游。")):L10n.tr("自上而下匹配，靠前的规则优先。"));button(head,L10n.tr("添加规则"),false,()->ruleForm(kind,section,phase,null,false));
         for(int i=0;i<rules.size();i++){
-            final int index=i;ResourceText.Entry entry=rules.get(i);int arrow=entry.arrow();LinearLayout c=card(String.format(Locale.ROOT,"规则 %02d",i+1));
-            if(arrow<0){hint(c,entry.text);hint(c,"自定义结构，完整文本中可编辑");continue;}
+            final int index=i;ResourceText.Entry entry=rules.get(i);int arrow=entry.arrow();LinearLayout c=card(String.format(Locale.ROOT,L10n.tr("规则 %02d"),i+1));
+            if(arrow<0){hint(c,entry.text);hint(c,L10n.tr("自定义结构，完整文本中可编辑"));continue;}
             TextView condition=text(entry.text.substring(0,arrow).trim(),13,ink);condition.setTypeface(Typeface.MONOSPACE);c.addView(condition);c.addView(text("→  "+entry.text.substring(arrow+2).trim(),17,accent));
-            paired(c,"编辑规则",()->ruleForm(kind,section,phase,entry,false),"更多",()->{
-                ArrayList<String> options=new ArrayList<>();if(index>0)options.add("上移");if(index+1<rules.size())options.add("下移");options.add("删除规则");
-                new AlertDialog.Builder(this).setTitle("规则 "+(index+1)).setItems(options.toArray(new String[0]),(d,choice)->{
-                    String action=options.get(choice);if(action.equals("删除规则"))confirm("删除规则","将删除这条匹配规则。",()->saveSection(kind,section,ResourceText.remove(raw,entry)));
-                    else saveSection(kind,section,ResourceText.swap(raw,entry,rules.get(index+(action.equals("上移")?-1:1))));
+            paired(c,L10n.tr("编辑规则"),()->ruleForm(kind,section,phase,entry,false),L10n.tr("更多"),()->{
+                ArrayList<String> options=new ArrayList<>();if(index>0)options.add(L10n.tr("上移"));if(index+1<rules.size())options.add(L10n.tr("下移"));options.add(L10n.tr("删除规则"));
+                new AlertDialog.Builder(this).setTitle(L10n.tr("规则 ")+(index+1)).setItems(options.toArray(new String[0]),(d,choice)->{
+                    String action=options.get(choice);if(action.equals(L10n.tr("删除规则")))confirm(L10n.tr("删除规则"),L10n.tr("将删除这条匹配规则。"),()->saveSection(kind,section,ResourceText.remove(raw,entry)));
+                    else saveSection(kind,section,ResourceText.swap(raw,entry,rules.get(index+(action.equals(L10n.tr("上移"))?-1:1))));
                 }).show();
             });
         }
-        ResourceText.Entry last=fallback;LinearLayout end=card("兜底行为");hint(end,last==null?"尚未显式设置":last.text.substring(last.text.indexOf(':')+1).trim());
-        button(end,"设置兜底",false,()->ruleForm(kind,section,phase,last,true));
+        ResourceText.Entry last=fallback;LinearLayout end=card(L10n.tr("兜底行为"));hint(end,last==null?L10n.tr("尚未显式设置"):last.text.substring(last.text.indexOf(':')+1).trim());
+        button(end,L10n.tr("设置兜底"),false,()->ruleForm(kind,section,phase,last,true));
     }
     private void ruleForm(String kind,JSONObject section,String phase,ResourceText.Entry existing,boolean fallback){
         boolean dns=kind.equals("dns");String raw=dns?ResourceText.wrap("dns",section.optString("dns")):section.optString("routing");
         LinearLayout fields=formFields();String value=existing==null?"":existing.text;int arrow=existing==null?-1:existing.arrow();
-        EditText condition=fallback?null:field(fields,"匹配条件",arrow<0?"":value.substring(0,arrow).trim(),true,false);
+        EditText condition=fallback?null:field(fields,L10n.tr("匹配条件"),arrow<0?"":value.substring(0,arrow).trim(),true,false);
         if(condition!=null){String[] presets=dns?(phase.equals("request")?new String[]{"qname(geosite:cn)","qtype(aaaa)"}:new String[]{"ip(geoip:cn)","upstream(resolver)"}):new String[]{"domain(suffix:example.com)","dip(geoip:cn)","l4proto(udp) && dport(443)"};
-            choicesTemplate(fields,condition,presets);hint(fields,"可组合多个条件，保存前会按完整配置校验。");}
+            choicesTemplate(fields,condition,presets);hint(fields,L10n.tr("可组合多个条件，保存前会按完整配置校验。"));}
         String current=fallback?(existing==null?(dns?(phase.equals("response")?"accept":"asis"):"direct"):value.substring(value.indexOf(':')+1).trim()):(arrow<0?(dns?(phase.equals("response")?"accept":"asis"):"direct"):value.substring(arrow+2).trim());
-        Spinner destination=choices(fields,dns?"解析目标 / 行为":"流量出口",current,ruleDestinations(kind,phase,raw));
-        form(fallback?"设置兜底":existing==null?"添加规则":"编辑规则",fields,()->{
-            try{String target=destination.getSelectedItem().toString();String expr=condition==null?"":condition.getText().toString().trim();if(!fallback&&(expr.isEmpty()||ResourceText.operator(expr,"->")>=0))throw new Exception("请填写匹配条件，出口通过下方选项选择");
+        Spinner destination=choices(fields,dns?L10n.tr("解析目标 / 行为"):L10n.tr("流量出口"),current,ruleDestinations(kind,phase,raw));
+        form(fallback?L10n.tr("设置兜底"):existing==null?L10n.tr("添加规则"):L10n.tr("编辑规则"),fields,()->{
+            try{String target=destination.getSelectedItem().toString();String expr=condition==null?"":condition.getText().toString().trim();if(!fallback&&(expr.isEmpty()||ResourceText.operator(expr,"->")>=0))throw new Exception(L10n.tr("请填写匹配条件，出口通过下方选项选择"));
                 String line=fallback?"fallback: "+target:expr+" -> "+target;
                 String edited=existing==null?ResourceText.insertRule(raw,dns,phase,line):ResourceText.replace(raw,existing,line);saveSection(kind,section,edited);
             }catch(Exception e){error(e);}
         });
     }
     private void choicesTemplate(LinearLayout parent,EditText condition,String[] presets){
-        button(parent,"使用条件模板",false,()->new AlertDialog.Builder(this).setTitle("选择条件模板").setItems(presets,(d,index)->condition.setText(presets[index])).show());
+        button(parent,L10n.tr("使用条件模板"),false,()->new AlertDialog.Builder(this).setTitle(L10n.tr("选择条件模板")).setItems(presets,(d,index)->condition.setText(presets[index])).show());
     }
     private void option(LinearLayout parent,String title,boolean checked,String command) {
         Switch option=new Switch(this);option.setText(title);option.setTextColor(ink);option.setChecked(checked);option.setPadding(0,dp(10),0,dp(10));parent.addView(option);actions.add(option);
         option.setEnabled(status!=null&&!busy);
-        option.setOnCheckedChangeListener((button,on)->task("正在保存设置…",()->module.command(command+(on?" on":" off")),s->refreshStatus(false)));
+        option.setOnCheckedChangeListener((button,on)->task(L10n.tr("正在保存设置…"),()->module.command(command+(on?" on":" off")),s->refreshStatus(false)));
     }
-    private void serviceCommand(String command) { task("正在"+(command.equals("stop")?"停止":"启动")+"服务…",()->{String result=module.command(command);api.clear();return module.status();},s->{status=s;showPage(4);}); }
-    private void confirm(String title,String message,Runnable yes) {new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton("取消",null).setPositiveButton("确认",(d,w)->yes.run()).show();}
-    private void textDialog(String title,String value) {ScrollView scroll=new ScrollView(this);TextView t=text(value,12,ink);t.setPadding(dp(18),dp(12),dp(18),dp(16));t.setTextIsSelectable(true);t.setTypeface(Typeface.MONOSPACE);scroll.addView(t);new AlertDialog.Builder(this).setTitle(title).setView(scroll).setPositiveButton("关闭",null).show();}
+    private void serviceCommand(String command) { task(L10n.tr("正在")+(command.equals("stop")?L10n.tr("停止"):L10n.tr("启动"))+L10n.tr("服务…"),()->{String result=module.command(command);api.clear();return module.status();},s->{status=s;showPage(4);}); }
+    private void confirm(String title,String message,Runnable yes) {new AlertDialog.Builder(this).setTitle(title).setMessage(message).setNegativeButton(L10n.tr("取消"),null).setPositiveButton(L10n.tr("确认"),(d,w)->yes.run()).show();}
+    private void textDialog(String title,String value) {ScrollView scroll=new ScrollView(this);TextView t=text(value,12,ink);t.setPadding(dp(18),dp(12),dp(18),dp(16));t.setTextIsSelectable(true);t.setTypeface(Typeface.MONOSPACE);scroll.addView(t);new AlertDialog.Builder(this).setTitle(title).setView(scroll).setPositiveButton(L10n.tr("关闭"),null).show();}
 }
