@@ -2,7 +2,7 @@
 
 原生 Android 管理器，与 DaedNext KernelSU 模块共同工作。交互分工参考 [NetProxy Android Manager](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)，客户端与模块接口独立实现，未复制其 UI 或业务源码。
 
-当前源码版本 **0.1.10**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha8 ZIP 内包含 Manager 0.1.7；历史 alpha7 ZIP 内为 Manager 0.1.1。
+当前源码版本 **0.1.11**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha8 ZIP 内包含 Manager 0.1.7；历史 alpha7 ZIP 内为 Manager 0.1.1。
 
 ## 安装
 
@@ -58,7 +58,7 @@ $env:ANDROID_HOME = 'C:\Android\sdk'
 python android/manager/build.py
 ```
 
-输出 `android/dist/DaedNext-Manager-v0.1.10.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
+输出 `android/dist/DaedNext-Manager-v0.1.11.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
 
 运行 `python android/manager/test-text.py` 可检查多行条件、引号、注释、片段编辑与规则排序的保留行为；CI 同时执行这些纯 Java 检查及原生 App 编译。
 
@@ -73,3 +73,5 @@ python android/manager/build.py --unsigned
 将已签名 APK 放入 `android/module/manager/DaedNext-Manager.apk` 后重新打包模块。运行时恢复工具会从锁定的 Release 取回 APK；修改 App 源码后应重新构建，不能用旧 APK 替代新代码。Release 发布模块 ZIP 和独立 APK 两个附件；ZIP 内也包含同一 APK，不发布 SHA256 附件。
 
 首页开关动画默认 1.25 秒，失败确认回退默认 0.55 秒，遵循系统动画设置。请求与动画并行，不延迟后端操作；等待确认及动画期间阻止重复切换。界面文字以模块实际状态为准，黑名单 Wi-Fi 仍显示自动直连。关闭系统动画时直接更新；离开前台或视图脱离窗口时停止动画，静止状态没有循环帧。B 版素材来源与提示词见 [ARTWORK.md](ARTWORK.md)。
+
+首次导入节点后须建立节点、群组、路由关联，操作见 [首次代理配置](../docs/FIRST-PROXY.md)。

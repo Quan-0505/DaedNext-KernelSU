@@ -156,6 +156,14 @@ public final class MainActivity extends Activity {
     }
     private void error(Exception error) {
         String message=error.getMessage(); if (message==null || message.isEmpty()) message="操作失败，请检查服务状态";
+        if(message.contains("no user-defined routing outbound with a resolvable node link was found")) {
+            notice.setText("代理出口尚未配置完成");notice.setTextColor(appearance.danger);
+            new AlertDialog.Builder(this).setTitle("请先配置代理出口")
+                .setMessage("节点已导入，并不代表已接入代理路由。\n\n1. 资源 → 群组 → proxy → 管理成员，添加要使用的节点（或关联订阅）。\n2. 资源 → 路由，编辑当前已选方案，把兜底出口设为 proxy，或添加指向该群组的代理规则。\n3. 资源 → 配置 → 应用当前配置。\n\n若群组使用固定策略，请只保留一个候选节点。本提示不会自动修改你的节点、群组或路由。")
+                .setPositiveButton("配置群组",(dialog,which)->openWorkspace(6))
+                .setNeutralButton("配置路由",(dialog,which)->openWorkspace(8))
+                .setNegativeButton("稍后处理",null).show();return;
+        }
         notice.setText(message); notice.setTextColor(appearance.danger);
         new AlertDialog.Builder(this).setTitle("需要处理").setMessage(message).setPositiveButton("知道了",null).show();
     }
@@ -448,7 +456,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.10"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.11"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
@@ -539,7 +547,7 @@ public final class MainActivity extends Activity {
     private String policyLabel(String key){for(int i=0;i<POLICIES.length;i++)if(POLICIES[i].equals(key))return POLICY_LABELS[i];return key;}
     private void loadGroups(){
         resourceHeading(3,"把候选节点组织成适合你的出口。");
-        LinearLayout top=card("代理出口");hint(top,"为节点和订阅设置出口策略。编辑后在配置页应用，使修改生效。");
+        LinearLayout top=card("代理出口");hint(top,"导入节点后，请在管理成员中添加节点或关联订阅，并在路由中引用此群组。编辑后在配置页应用，使修改生效。");
         paired(top,"新建群组",()->groupForm(null),"刷新",()->showPage(6));
         task("正在读取群组…",()->api.get("groups?summary=true"),result->{
             JSONArray groups=items(result);if(groups.length()==0)hint(card("还没有群组"),"新建群组，再添加节点或订阅。");
