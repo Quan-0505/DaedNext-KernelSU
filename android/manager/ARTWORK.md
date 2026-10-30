@@ -1,4 +1,15 @@
-# B 版琉璃鹅核素材
+# App 美术素材
+
+## C 版桌面图标（Manager 0.1.7）
+
+- 透明前景：`res/drawable-nodpi/launcher_goose.png`，由内置 image_gen 从用户选定的 C 版卡通鹅概念提取。保留白鹅、粗黑描边、橙色喙与脚、小灰刀及跑动姿态。
+- `res/drawable/launcher_background.xml` 与 `launcher_speeds.xml` 绘制黄色渐变和速度线；`launcher_foreground.xml` 使用 21% 相对 inset。
+- `res/mipmap-anydpi-v26/ic_launcher.xml` 提供自适应图标；`res/mipmap-anydpi-v33/ic_launcher.xml` 增加单色主题层。前景 SHA256 已纳入公开源码审计白名单。
+- 提取提示词：
+
+Use case: background-extraction / precise-object-edit for a production Android adaptive icon. The attached image is the USER-SELECTED FINAL cartoon icon concept C. Preserve the exact same running white goose design and pose: long forward neck facing right, raised folded wing, cute glossy black eye, thick smooth black outlines, small gray rounded-tip knife with yellow handle in the orange bill, broad orange webbed feet, the same gray cel-shading and proportions. Extract ONLY that goose WITH its knife and feet as a single isolated transparent foreground asset. Remove the entire golden-yellow background, ALL white speed lines, ALL dots, ALL ground shadow. Do not redraw into a different goose, do not change expression or direction or style, no collar/backpack or new accessories. Keep original thick black outlines and clear internal feather shapes. Genuine alpha-transparent background, no baked checkerboard, no opaque white or black rectangle, no icon border, no rounded square, no text. Center the extracted complete subject inside a square canvas with about 10 percent transparent breathing room on every side and no cut-off wing, knife or feet. Main goose silhouette should occupy 80 percent of canvas width, scale proportionally. This is a clean production foreground layer for Android, not a presentation mockup.
+
+## B 版琉璃鹅核素材
 
 用于 DaedNext Manager 0.1.6。通过内置 image_gen 从用户选定的 B 版概念生成两套透明素材，App 离线加载，无运行时网络请求。
 

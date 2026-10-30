@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SOURCE_ARTWORK = {
     'manager/res/drawable-nodpi/goose_core_light.png': '2a39a8ed2e4123676316525c9265bcb2398dcac8e8f38c413b05d178a6571bcf',
     'manager/res/drawable-nodpi/goose_core_dark.png': '83dcc11347140303e44860e471d7f70886baad3b05dc906e70105c0db26f7941',
+    'manager/res/drawable-nodpi/launcher_goose.png': '79f57c4dd48cc6410b21d6b0466bc196e5c85a3959f3ef48d7b573c53964a66d',
 }
 files = subprocess.check_output(['git', 'ls-files', '-z', 'android'], cwd=ROOT).decode().split('\0')
 errors = []
