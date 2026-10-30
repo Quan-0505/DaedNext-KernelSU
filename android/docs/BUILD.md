@@ -2,17 +2,21 @@
 
 ## 修改服务 / WebUI 后重新打包
 
-Python 3.10+、Git 即可完成这一流程，Windows 和 Linux 均可使用。它复用 alpha5 发布包内已验证的核心、面板、NDK 运行库与 geodata，不重新编译 Rust。
+Python 3.10+、Git 即可完成这一流程，Windows 和 Linux 均可使用。它复用 alpha7 发布包内已验证的核心、面板、NDK 运行库与 geodata，不重新编译 Rust。
 
 ```sh
 git clone https://github.com/Quan-0505/DaedNext-KernelSU.git
 cd DaedNext-KernelSU
 python android/tools/fetch-runtime.py
+python android/manager/build.py
+python -c "import shutil; shutil.copyfile('android/dist/DaedNext-Manager-v0.1.7.apk', 'android/module/manager/DaedNext-Manager.apk')"
 python android/tools/seed-defaults.py
 python android/tools/package.py
 ```
 
-安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中，不生成单独校验附件。离线已有 alpha5 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha5-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
+安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中，不生成单独校验附件。离线已有 alpha7 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha7-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
+
+恢复脚本会取回旧版 APK；修改 App 后须按上述步骤构建并替换。App 构建需要 JDK 17、Android SDK 35 与 Build Tools 35.0.0，签名维护见 [管理器说明](../manager/README.md)。
 
 发布新版本前修改 `android/module/module.prop` 的 version/versionCode，更新 WebUI 版本标识及 CHANGELOG。不要把用户数据库复制到 module/defaults；默认数据库由源码 schema 生成。
 
@@ -83,4 +87,4 @@ cargo test --locked -p dae-daemon --lib production_runtime_owner::topology::test
 - Android source checks：检查新增 Android 源码、Shell/Python/JavaScript 语法以及空白默认数据库，不声称覆盖 Android 数据面。
 - Build Android module：手动完整构建核心，复用锁定的面板/geodata 输入并上传 Artifact；选择 rebuild_panel 可重新编译锁定面板。工作流不自动创建 Release。
 
-不要把 SSH 密码、订阅或手机数据库放进 Actions 变量或构建产物。GitHub Release 只上传安装 ZIP，不上传单独的 SHA256 文件；如需展示校验值，写在发布说明中。新版本在实机通过验收后再发布。
+不要把 SSH 密码、订阅或手机数据库放进 Actions 变量或构建产物。GitHub Release 只上传模块 ZIP 和独立 APK 两个附件，不上传单独的 SHA256 文件；如需展示校验值，写在发布说明中。新版本在实机通过验收后再发布。

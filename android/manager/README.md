@@ -2,14 +2,14 @@
 
 原生 Android 管理器，与 DaedNext KernelSU 模块共同工作。交互分工参考 [NetProxy Android Manager](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)，客户端与模块接口独立实现，未复制其 UI 或业务源码。
 
-当前源码版本 **0.1.7**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。已发布的 alpha7 ZIP 内仍为 Manager 0.1.1。
+当前源码版本 **0.1.7**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha8 ZIP 内包含 Manager 0.1.7；历史 alpha7 ZIP 内为 Manager 0.1.1。
 
 ## 安装
 
 需要 Android 8.0 或更新版本、KernelSU Root 授权，以及本项目 alpha7 或更新模块。
 
 1. 在 KernelSU 中安装 Release 的 ARM64 模块 ZIP，按管理器提示重启。
-2. 从同一个 ZIP 解压 `manager/DaedNext-Manager.apk`，在手机安装。
+2. 安装同一 Release 的独立 APK，或从 ZIP 解压 `manager/DaedNext-Manager.apk` 安装。
 3. 在 KernelSU 的超级用户列表中允许 **DaedNext**，再打开 App。
 4. 已有账户、节点、订阅及 Wi-Fi 策略直接使用。首次安装没有账户时，进入高级面板完成账户和基础配置。
 
@@ -70,6 +70,6 @@ CI 使用以下命令编译和对齐 APK，不读取或生成签名密钥：
 python android/manager/build.py --unsigned
 ```
 
-将已签名 APK 放入 `android/module/manager/DaedNext-Manager.apk` 后重新打包模块。运行时恢复工具会从锁定的 Release 取回 APK；修改 App 源码后应重新构建，不能用旧 APK 替代新代码。Release 仍只发布一个 ZIP，APK 位于包内。
+将已签名 APK 放入 `android/module/manager/DaedNext-Manager.apk` 后重新打包模块。运行时恢复工具会从锁定的 Release 取回 APK；修改 App 源码后应重新构建，不能用旧 APK 替代新代码。Release 发布模块 ZIP 和独立 APK 两个附件；ZIP 内也包含同一 APK，不发布 SHA256 附件。
 
 首页开关动画默认 1.25 秒，失败确认回退默认 0.55 秒，遵循系统动画设置。请求与动画并行，不延迟后端操作；等待确认及动画期间阻止重复切换。界面文字以模块实际状态为准，黑名单 Wi-Fi 仍显示自动直连。关闭系统动画时直接更新；离开前台或视图脱离窗口时停止动画，静止状态没有循环帧。B 版素材来源与提示词见 [ARTWORK.md](ARTWORK.md)。

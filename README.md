@@ -1,4 +1,5 @@
 <div align="center">
+  <img src="android/manager/res/drawable-nodpi/launcher_goose.png" width="96" alt="DaedNext 卡通鹅图标">
   <h1>DaedNext-KernelSU</h1>
   <p><strong>面向 ARM64 Android 的 KernelSU 原生透明代理模块</strong></p>
   <p>Rust DaeNext 核心 · DaedNext 管理面板 · Android 网络适配</p>
@@ -31,7 +32,8 @@ DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust �
 | 能力 | 说明 |
 | --- | --- |
 | 原生流量处理 | 使用 Rust 核心及 TCX/eBPF 数据面接管流量，结合配置完成直连或代理转发。 |
-| 原生管理器与 WebUI | Android App 管理启停、节点、订阅、Wi-Fi 策略和维护；保留 KernelSU WebUI，高级配置使用内嵌 DaedNext 面板。 |
+| 原生管理器与 WebUI | Android App 原生管理配置、DNS、路由、群组、节点和订阅；提供启停、Wi-Fi 策略与维护入口，保留 KernelSU WebUI 和高级面板。 |
+| 外观与交互 | 跟随系统／云雾浅色／星夜深色，四项底部导航与资源工作台；B 版琉璃鹅核启停动画、C 版自适应桌面图标。 |
 | 服务生命周期 | 提供启动、停止、重启、重载、开机恢复、状态检查与一致性备份。 |
 | Android 网络适配 | 自动选择 WAN，使用 Android 策略路由同时监测 IPv4／IPv6，支持 Wi-Fi／蜂窝切换后的数据面恢复。 |
 | Wi-Fi 自动切换 | 黑名单内直连、名单外代理；白名单反向。移动数据策略独立，保留手动停止意图。 |
@@ -56,9 +58,9 @@ DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust �
 | 内核能力 | 需具备兼容的 eBPF/TC、BTF、veth 与网络命名空间支持；厂商限制会影响实际可用性。 |
 | 已验证设备 | 一加 13 / PJZ110，Android 17 / SDK 37。 |
 | 已验证内核 | `6.6.118-android15` AGKI，SELinux Enforcing。 |
-| 当前实测版本 | 模块 `v0.1.0-alpha7`，核心 `3.1.0-android-ksu.6`。 |
+| 当前发布版本 | 安装包 `v0.1.0-alpha8`，Manager `0.1.7`；沿用 alpha7 核心 `3.1.0-android-ksu.6`。 |
 
-alpha7 新增原生 Android 管理器及仅允许本机 Root 调用的短期会话接口。实机验证覆盖 App 读取现有数据、节点导入与编辑、策略保存、代理启停、高级面板，以及 Wi-Fi／5G 自动切换。历史版本的验证记录分别保留；alpha7 本轮未重新验证手机冷启动。
+alpha8 汇总 Manager 0.1.2–0.1.7 的原生资源界面、明暗主题、琉璃鹅核动画和卡通鹅图标。实机验证覆盖六项资源导航、临时 DNS／路由编辑与校验、配置／群组编辑、启停动画及图标裁切；具体写入范围见实测记录。核心与模块控制逻辑沿用 alpha7，Wi-Fi／5G 数据面与冷启动未在本次 UI 发布中重测。
 
 当前设备的 cgroup attach 受到厂商内核限制，配置应避免 `pname()` 进程名路由。全部 UDP/QUIC、IPv6 场景、其他机型、Play 应用安装与付费购买不在本轮验收结论内。具体条件和证据摘要见 [实测记录](android/docs/VALIDATION.md)。
 
@@ -68,9 +70,9 @@ alpha7 新增原生 Android 管理器及仅允许本机 Root 调用的短期会�
 
 从 [Latest Release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest) 下载 ARM64 ZIP，在 KernelSU 管理器中选择本地安装，完成后重启。
 
-当前实测安装包：[`DaedNext-KernelSU-v0.1.0-alpha7-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha7/DaedNext-KernelSU-v0.1.0-alpha7-arm64.zip)。Release 只提供安装 ZIP。
+当前发布安装包：[`DaedNext-KernelSU-v0.1.0-alpha8-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha8/DaedNext-KernelSU-v0.1.0-alpha8-arm64.zip)。Release 提供模块 ZIP 与独立 APK 两个附件。
 
-同一个 ZIP 内包含 `manager/DaedNext-Manager.apk`。解压安装后，在 **KernelSU → 超级用户** 中允许 **DaedNext**，即可通过 App 管理现有模块。原有账户、节点、订阅和 Wi-Fi 名单直接保留；App 不会自动安装。详见 [Android 管理器说明](android/manager/README.md)。
+独立 App：[DaedNext-Manager-v0.1.7.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha8/DaedNext-Manager-v0.1.7.apk)。同一个 ZIP 内也包含 `manager/DaedNext-Manager.apk`。解压安装后，在 **KernelSU → 超级用户** 中允许 **DaedNext**，即可通过 App 管理现有模块。原有账户、节点、订阅和 Wi-Fi 名单直接保留；App 不会自动安装。详见 [Android 管理器说明](android/manager/README.md)。
 
 安装前停止其他透明代理核心或 VPN，避免重复接管流量。模块包含冲突检测，但不能代替对其他代理状态的检查。
 
