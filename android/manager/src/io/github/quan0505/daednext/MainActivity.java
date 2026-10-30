@@ -43,7 +43,7 @@ public final class MainActivity extends Activity {
     private JSONArray resourceGroups=new JSONArray();
     private Appearance appearance;
     private int ink, muted, background, card, border, accent;
-    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置", "配置", "群组", "DNS", "路由", "资源", "运行概况"};
+    private final String[] pages = {"仪表盘", "节点", "订阅", "智联", "设置", "配置", "群组", "DNS", "路由", "资源", "运行概况"};
     private static final int[] RESOURCE_PAGES={5,7,8,6,1,2};
     private static final String[] RESOURCE_NAMES={"配置","DNS","路由","群组","节点","订阅"};
     private static final String[] RESOURCE_HINTS={"运行参数与探测","上游解析与查询分流","规则顺序与流量出口","候选节点与优选策略","独立与订阅节点","订阅来源与自动更新"};
@@ -121,7 +121,7 @@ public final class MainActivity extends Activity {
     }
     private void buildNav() {
         nav.removeAllViews();
-        int[] destinations={0,9,3,4},icons={0,8,3,4};String[] labels={"首页","资源","网络","设置"};
+        int[] destinations={0,9,3,4},icons={0,8,3,4};String[] labels={"首页","资源","智联","设置"};
         for (int i=0;i<destinations.length;i++) {
             final int index=destinations[i];boolean selected=index==page||(index==0&&page==10)||(index==9&&(page==1||page==2||(page>=5&&page<=9)));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
@@ -503,7 +503,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.14"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.15"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
