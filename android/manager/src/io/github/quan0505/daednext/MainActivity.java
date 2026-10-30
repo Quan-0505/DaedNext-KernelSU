@@ -219,6 +219,15 @@ public final class MainActivity extends Activity {
         heroTitle=text(state,29,ink);heroTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));heroTitle.setGravity(Gravity.CENTER);hero.addView(heroTitle);
         heroDetail=text("",13,muted);heroDetail.setMinLines(2);heroDetail.setGravity(Gravity.CENTER);LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);detailParams.topMargin=dp(6);detailParams.bottomMargin=dp(10);hero.addView(heroDetail,detailParams);
         proxyToggle=button(hero,wanted?"暂停代理":"启用代理",true,this::toggleProxy);
+        LinearLayout resources=row();LinearLayout.LayoutParams resourcesParams=new LinearLayout.LayoutParams(-1,-2);resourcesParams.bottomMargin=dp(8);content.addView(resources,resourcesParams);
+        cpuValue=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
+        memoryValue=metric(resources,"内存占用","—",appearance.light?0xff80643d:0xffdcc394,false);
+
+        LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
+        downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
+        uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
+        trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
+
         LinearLayout network=card("");JSONObject w=status==null?null:status.optJSONObject("wifiPolicy");
         LinearLayout networkRow=row();network.addView(networkRow);
         android.widget.FrameLayout wifiIcon=new android.widget.FrameLayout(this);wifiIcon.setBackground(shape(appearance.control,15));
@@ -231,16 +240,6 @@ public final class MainActivity extends Activity {
         TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription("网络策略");
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
-        LinearLayout resources=row();LinearLayout.LayoutParams resourcesParams=new LinearLayout.LayoutParams(-1,-2);resourcesParams.bottomMargin=dp(8);content.addView(resources,resourcesParams);
-        cpuValue=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
-        memoryValue=metric(resources,"内存占用","—",appearance.light?0xff80643d:0xffdcc394,false);
-        TextView resourceScope=text("仅统计 DaedNext 服务，不含其他应用。",10,muted);resourceScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(resourceScope);
-
-        LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
-        downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
-        uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
-        trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
-
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
         LinearLayout advancedText=column();advancedRow.addView(advancedText,new LinearLayout.LayoutParams(0,-2,1));
         advancedText.addView(text("高级管理面板",16,ink));hint(advancedText,"策略组、DNS 与路由规则");advancedRow.addView(text("↗",22,muted));
@@ -248,6 +247,19 @@ public final class MainActivity extends Activity {
         button(content,"查看运行概况",false,()->showPage(10));
         if(status==null)button(content,"连接模块 / 申请 Root 授权",false,()->refreshStatus(true));
         updateDashboard();
+        fitHomeMetrics(rates);
+    }
+    private void fitHomeMetrics(LinearLayout lastRow){
+        final int epoch=generation;final GlassGooseView art=connectionArt;
+        scroll.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener(){
+            public boolean onPreDraw(){
+                if(page!=0||epoch!=generation||art!=connectionArt){scroll.getViewTreeObserver().removeOnPreDrawListener(this);return true;}
+                int overflow=lastRow.getBottom()+dp(6)-scroll.getHeight();
+                LinearLayout.LayoutParams p=(LinearLayout.LayoutParams)art.getLayoutParams();
+                if(overflow>0&&p.height>dp(88)){p.height=Math.max(dp(88),p.height-overflow);art.setLayoutParams(p);return false;}
+                scroll.getViewTreeObserver().removeOnPreDrawListener(this);return true;
+            }
+        });
     }
     private void updateDashboard(){
         if(page!=0||connectionArt==null||heroTitle==null)return;
@@ -262,7 +274,7 @@ public final class MainActivity extends Activity {
         double cpu=metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent");
         cpuValue.setText(Double.isNaN(cpu)||Double.isInfinite(cpu)||cpu<0?"—":String.format(Locale.ROOT,"%.1f%%",cpu));
         memoryValue.setText(metrics==null?"—":bytes(metrics.optDouble("rssBytes")));
-        trafficScope.setText(bypass&&wanted?"直连期间，Wi-Fi 上游流量不计入这里。":"仅统计由手机代理转发的流量。");
+        trafficScope.setText(bypass&&wanted?"仅统计本机服务；直连 Wi-Fi 的上游流量不计入。":"仅统计 DaedNext 服务及其转发流量。");
     }
     private void toggleProxy(){
         if(busy||proxySwitchPending||connectionArt==null||connectionArt.isAnimating()||status==null)return;
@@ -491,7 +503,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.13"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.14"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
