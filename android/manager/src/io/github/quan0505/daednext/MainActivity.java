@@ -433,7 +433,6 @@ public final class MainActivity extends Activity {
     }
     private String join(JSONArray values){if(values==null)return "";StringBuilder out=new StringBuilder();for(int i=0;i<values.length();i++){if(i>0)out.append('\n');out.append(values.optString(i));}return out.toString();}
     private void settings() {
-        workspaceEntries();
         LinearLayout look=card("外观");
         hint(look,"云雾浅色与星夜深色，也可以随系统自动切换。");
         button(look,Appearance.LABELS[Appearance.selected(this)],false,()->new AlertDialog.Builder(this)
@@ -455,7 +454,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.7"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.8"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
