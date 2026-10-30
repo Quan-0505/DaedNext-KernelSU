@@ -24,7 +24,7 @@ public final class MainActivity extends Activity {
     private ScrollView scroll;
     private TextView pageTitle, notice, badge;
     private GlassGooseView connectionArt;
-    private TextView heroTitle,heroDetail,networkName,networkPolicy,downloadValue,uploadValue,trafficScope;
+    private TextView heroTitle,heroDetail,networkName,networkPolicy,downloadValue,uploadValue,cpuValue,memoryValue,trafficScope;
     private Button proxyToggle;
     private boolean proxySwitchPending,proxySwitchTarget;
     private AlertDialog formDialog;
@@ -219,12 +219,17 @@ public final class MainActivity extends Activity {
         TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription("网络策略");
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
-        workspaceEntries();
-
         LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
         downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
         uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
         trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
+
+        LinearLayout resources=row();LinearLayout.LayoutParams resourcesParams=new LinearLayout.LayoutParams(-1,-2);resourcesParams.bottomMargin=dp(8);content.addView(resources,resourcesParams);
+        cpuValue=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
+        memoryValue=metric(resources,"内存占用","—",appearance.light?0xff80643d:0xffdcc394,false);
+        TextView resourceScope=text("仅统计 DaedNext 服务，不含其他应用。",10,muted);resourceScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(resourceScope);
+
+        workspaceEntries();
 
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
         LinearLayout advancedText=column();advancedRow.addView(advancedText,new LinearLayout.LayoutParams(0,-2,1));
@@ -244,6 +249,9 @@ public final class MainActivity extends Activity {
         String iface=status==null?"":status.optString("interface");networkName.setText(w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?"移动数据":"当前网络");
         networkPolicy.setText(w==null?"等待网络策略":w.optBoolean("enabled")?(w.optString("mode").equals("blacklist")?"黑名单":"白名单")+" · "+(w.optBoolean("direct")?"手机直连":"使用代理"):"按现有规则连接");
         downloadValue.setText(metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s");uploadValue.setText(metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s");
+        double cpu=metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent");
+        cpuValue.setText(Double.isNaN(cpu)||Double.isInfinite(cpu)||cpu<0?"—":String.format(Locale.ROOT,"%.1f%%",cpu));
+        memoryValue.setText(metrics==null?"—":bytes(metrics.optDouble("rssBytes")));
         trafficScope.setText(bypass&&wanted?"直连期间，Wi-Fi 上游流量不计入这里。":"仅统计由手机代理转发的流量。");
     }
     private void toggleProxy(){
@@ -454,7 +462,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.8"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.9"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
