@@ -58,7 +58,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("DaedNext", 22, ink); brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         brandRow.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         badge=text("KernelSU",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
-        badge.setOnClickListener(v->{if(page>=5||page==1)onBackPressed();});
+        badge.setOnClickListener(v->{if(page>=5||page==1||page==2)onBackPressed();});
         pageTitle = text("你的连接", 31, ink); pageTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);titleParams.topMargin=dp(15);header.addView(pageTitle,titleParams);
         root.addView(header);
@@ -75,7 +75,7 @@ public final class MainActivity extends Activity {
     @Override public void onBackPressed() {
         if(busy)return;
         if(page==9){showPage(0);return;}
-        if(page==1){showPage(9);return;}
+        if(page==1||page==2){showPage(9);return;}
         if(page==6&&detailGroupId>0){showPage(6);return;}
         if((page==7||page==8)&&detailSection!=null){showPage(page);return;}
         if(page>=5){showPage(returnPage);return;}
@@ -115,12 +115,12 @@ public final class MainActivity extends Activity {
     }
     private void buildNav() {
         nav.removeAllViews();
-        int[] destinations={0,9,2,3,4};String[] labels={"首页","资源","订阅","网络","设置"};
-        for (int i=0;i<5;i++) {
-            final int index=destinations[i];boolean selected=index==page||(index==9&&(page==1||page>=5));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
+        int[] destinations={0,9,3,4},icons={0,8,3,4};String[] labels={"首页","资源","网络","设置"};
+        for (int i=0;i<destinations.length;i++) {
+            final int index=destinations[i];boolean selected=index==page||(index==9&&(page==1||page==2||page>=5));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
             if(selected)iconFrame.setBackground(shape(appearance.selected,13));
-            NavIconView icon=new NavIconView(this,i==1?8:i,selected?accent:muted);
+            NavIconView icon=new NavIconView(this,icons[i],selected?accent:muted);
             android.widget.FrameLayout.LayoutParams iconParams=new android.widget.FrameLayout.LayoutParams(dp(23),dp(23),Gravity.CENTER);iconFrame.addView(icon,iconParams);
             item.addView(iconFrame,new LinearLayout.LayoutParams(dp(42),dp(31)));
             TextView label=text(labels[i],10,selected?ink:muted);
@@ -137,7 +137,7 @@ public final class MainActivity extends Activity {
     }
     private void showPage(int target) {
         page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?"你的连接":pages[page]); buildNav(); wifiDraft=false;
-        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1?"‹ 返回":"KernelSU");
+        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1||page==2?"‹ 返回":"KernelSU");
         if (page==0) dashboard();
         else if (page==1) loadNodes();
         else if (page==2) loadSubscriptions();
