@@ -25,6 +25,8 @@ public final class MainActivity extends Activity {
     private TextView pageTitle, notice, badge;
     private GlassGooseView connectionArt;
     private TextView heroTitle,heroDetail,networkName,networkPolicy,downloadValue,uploadValue,cpuValue,memoryValue,trafficScope;
+    private TextView[] overviewValues;
+    private TextView overviewState,overviewSample,overviewScope;
     private Button proxyToggle;
     private boolean proxySwitchPending,proxySwitchTarget;
     private AlertDialog formDialog;
@@ -41,7 +43,7 @@ public final class MainActivity extends Activity {
     private JSONArray resourceGroups=new JSONArray();
     private Appearance appearance;
     private int ink, muted, background, card, border, accent;
-    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置", "配置", "群组", "DNS", "路由", "资源"};
+    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置", "配置", "群组", "DNS", "路由", "资源", "运行概况"};
     private static final int[] RESOURCE_PAGES={5,7,8,6,1,2};
     private static final String[] RESOURCE_NAMES={"配置","DNS","路由","群组","节点","订阅"};
     private static final String[] RESOURCE_HINTS={"运行参数与探测","上游解析与查询分流","规则顺序与流量出口","候选节点与优选策略","独立与订阅节点","订阅来源与自动更新"};
@@ -78,7 +80,7 @@ public final class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) { out.putInt("page",page);out.putInt("returnPage",returnPage); super.onSaveInstanceState(out); }
     @Override public void onBackPressed() {
         if(busy)return;
-        if(page==9){showPage(0);return;}
+        if(page==9||page==10){showPage(0);return;}
         if(page==1||page==2){showPage(9);return;}
         if(page==6&&detailGroupId>0){showPage(6);return;}
         if((page==7||page==8)&&detailSection!=null){showPage(page);return;}
@@ -121,7 +123,7 @@ public final class MainActivity extends Activity {
         nav.removeAllViews();
         int[] destinations={0,9,3,4},icons={0,8,3,4};String[] labels={"首页","资源","网络","设置"};
         for (int i=0;i<destinations.length;i++) {
-            final int index=destinations[i];boolean selected=index==page||(index==9&&(page==1||page==2||page>=5));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
+            final int index=destinations[i];boolean selected=index==page||(index==0&&page==10)||(index==9&&(page==1||page==2||(page>=5&&page<=9)));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
             if(selected)iconFrame.setBackground(shape(appearance.selected,13));
             NavIconView icon=new NavIconView(this,icons[i],selected?accent:muted);
@@ -150,6 +152,7 @@ public final class MainActivity extends Activity {
         else if(page==5)loadConfigs();
         else if(page==6)loadGroups();
         else if(page==7||page==8)loadSections(page==7?"dns":"routings");
+        else if(page==10)loadMetricsPage();
         else loadResourceHub();
         scroll.post(()->scroll.scrollTo(0,0));
         content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
@@ -190,15 +193,16 @@ public final class MainActivity extends Activity {
         worker.execute(()->{
             JSONObject value=null,sample=null;Exception failure=null;
             try { value=module.status(); } catch(Exception e){failure=e;}
-            if(value!=null && !value.isNull("pid") && selectedPage==0)try{sample=api.get("runtime/overview");}catch(Exception ignored){}
+            if(value!=null && !value.isNull("pid") && (selectedPage==0||selectedPage==10))try{sample=api.get("runtime/overview");}catch(Exception ignored){}
             JSONObject result=value,statistics=sample; Exception problem=failure;
             main.post(()->{reading=false;if(isFinishing()||isDestroyed())return;
                 if(proxySwitchPending)return;
-                if(problem!=null){ notice.setText(problem.getMessage()); notice.setTextColor(appearance.danger); if(force)error(problem); return; }
+                if(problem!=null){ if(page==10&&epoch==generation){metrics=null;updateMetricsPage();}notice.setText(problem.getMessage()); notice.setTextColor(appearance.danger); if(force)error(problem); return; }
                 boolean firstStatus=status==null;
-                status=result;if(selectedPage==0)metrics=statistics;
+                status=result;if(selectedPage==0||selectedPage==10)metrics=statistics;
                 notice.setText(serviceOn()?"本机服务已连接":"后台服务未启动");notice.setTextColor(muted);
                 if(page==0 && epoch==generation && !busy)updateDashboard();
+                else if(page==10 && epoch==generation && !busy)updateMetricsPage();
                 else if(page==4 && firstStatus && epoch==generation && !busy){content.removeAllViews();actions.clear();settings();}
             });
         });
@@ -227,21 +231,21 @@ public final class MainActivity extends Activity {
         TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription("网络策略");
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
-        LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
-        downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
-        uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
-        trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
-
         LinearLayout resources=row();LinearLayout.LayoutParams resourcesParams=new LinearLayout.LayoutParams(-1,-2);resourcesParams.bottomMargin=dp(8);content.addView(resources,resourcesParams);
         cpuValue=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
         memoryValue=metric(resources,"内存占用","—",appearance.light?0xff80643d:0xffdcc394,false);
         TextView resourceScope=text("仅统计 DaedNext 服务，不含其他应用。",10,muted);resourceScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(resourceScope);
 
+        LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
+        downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
+        uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
+        trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
+
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
         LinearLayout advancedText=column();advancedRow.addView(advancedText,new LinearLayout.LayoutParams(0,-2,1));
         advancedText.addView(text("高级管理面板",16,ink));hint(advancedText,"策略组、DNS 与路由规则");advancedRow.addView(text("↗",22,muted));
         advanced.setOnClickListener(v->{if(!busy)panel("/");});actions.add(advanced);
-        button(content,"查看运行详情",false,()->task("正在读取运行概况…",()->api.get("runtime/overview"),this::showMetrics));
+        button(content,"查看运行概况",false,()->showPage(10));
         if(status==null)button(content,"连接模块 / 申请 Root 授权",false,()->refreshStatus(true));
         updateDashboard();
     }
@@ -279,10 +283,41 @@ public final class MainActivity extends Activity {
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);if(first)params.rightMargin=dp(5);else params.leftMargin=dp(5);parent.addView(box,params);
         box.addView(text(label,11,muted));TextView number=text(value,22,color);number.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));box.addView(number);return number;
     }
-    private void showMetrics(JSONObject j){
-        new AlertDialog.Builder(this).setTitle("运行概况").setMessage("上传速度："+bytes(j.optDouble("uploadRate"))+"/s\n下载速度："+bytes(j.optDouble("downloadRate"))+"/s\n累计上传："+bytes(j.optDouble("uploadTotal"))+"\n累计下载："+bytes(j.optDouble("downloadTotal"))+"\n内存："+bytes(j.optDouble("rssBytes"))+"\nCPU："+String.format(Locale.ROOT,"%.1f%%",j.optDouble("cpuUsagePercent",0))).setPositiveButton("完成",null).show();
+    private LinearLayout overviewRow(){
+        LinearLayout line=row();LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(10);content.addView(line,p);return line;
     }
-    private static String bytes(double n) { if(Double.isNaN(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }
+    private void loadMetricsPage(){
+        LinearLayout summary=card("");LinearLayout heading=row();summary.addView(heading);
+        android.widget.FrameLayout icon=new android.widget.FrameLayout(this);icon.setBackground(shape(appearance.selected,15));
+        icon.addView(new NavIconView(this,4,accent),new android.widget.FrameLayout.LayoutParams(dp(25),dp(25),Gravity.CENTER));heading.addView(icon,new LinearLayout.LayoutParams(dp(46),dp(46)));
+        LinearLayout label=column();LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,-2,1);lp.leftMargin=dp(13);heading.addView(label,lp);
+        overviewState=text("正在读取运行状态",18,ink);label.addView(overviewState);overviewSample=text("等待本机采样",11,muted);label.addView(overviewSample);
+        hint(summary,"数据来自本机服务，仅在前台每 6 秒刷新。");
+        TextView resourceLabel=text("服务资源",14,muted);resourceLabel.setPadding(dp(3),dp(8),0,dp(9));content.addView(resourceLabel);
+        overviewValues=new TextView[6];LinearLayout resources=overviewRow();
+        overviewValues[0]=metric(resources,"CPU 占用","—",appearance.light?0xff397c76:0xff8fcac1,true);
+        overviewValues[1]=metric(resources,"常驻内存","—",appearance.light?0xff80643d:0xffdcc394,false);
+        TextView flowLabel=text("代理流量",14,muted);flowLabel.setPadding(dp(3),dp(8),0,dp(9));content.addView(flowLabel);
+        LinearLayout rates=overviewRow();overviewValues[2]=metric(rates,"当前下载","—",appearance.light?0xff405d97:0xffb8c8ff,true);overviewValues[3]=metric(rates,"当前上传","—",appearance.light?0xff795399:0xffd0b7fb,false);
+        LinearLayout totals=overviewRow();overviewValues[4]=metric(totals,"累计下载","—",ink,true);overviewValues[5]=metric(totals,"累计上传","—",ink,false);
+        LinearLayout notes=card("统计范围");overviewScope=text("",12,muted);notes.addView(overviewScope);
+        button(content,"刷新运行数据",false,()->refreshStatus(true));
+        updateMetricsPage();refreshStatus(false);
+    }
+    private void updateMetricsPage(){
+        if(page!=10||overviewValues==null)return;
+        JSONObject r=ready();boolean bypass=r.optBoolean("networkPolicyPaused")&&r.optBoolean("runtimeRequired");
+        overviewState.setText(status==null?"等待连接":!serviceOn()?"服务未启动":bypass?"Wi-Fi 自动直连":r.optBoolean("runtimeRunning")?"代理运行中":r.optBoolean("runtimeRequired")?"正在恢复连接":"代理已暂停");
+        String sampled=metrics==null?"":metrics.optString("updatedAt","");
+        try{sampled=java.time.OffsetDateTime.parse(sampled).atZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss",Locale.getDefault()));}catch(Exception ignored){sampled="";}
+        overviewSample.setText(sampled.isEmpty()?"暂未取得运行采样":"最近采样 · "+sampled);
+        overviewValues[0].setText(percent(metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent")));
+        String[] keys={"rssBytes","downloadRate","uploadRate","downloadTotal","uploadTotal"};
+        for(int i=0;i<keys.length;i++){String value=bytes(metrics==null?Double.NaN:metrics.optDouble(keys[i]));overviewValues[i+1].setText(value.equals("—")?value:value+(i==1||i==2?"/s":""));}
+        overviewScope.setText("CPU 与内存仅统计 DaedNext 服务，不含其他应用。\n\n"+(bypass?"当前 Wi-Fi 自动直连，上游代理流量不计入这里。":"流量仅统计由手机代理转发的部分。")+"\n\n数据暂不可用时显示 —；离开 App 后停止刷新。");
+    }
+    private static String percent(double value){return Double.isNaN(value)||Double.isInfinite(value)||value<0?"—":String.format(Locale.ROOT,"%.1f%%",value);}
+    private static String bytes(double n) { if(Double.isNaN(n)||Double.isInfinite(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }
     private void panel(String path) { Intent intent=new Intent(this,PanelActivity.class);intent.putExtra("path",path);startActivity(intent); }
     private void openWorkspace(int target){returnPage=page==9?9:page<5?page:9;showPage(target);}
     private int resourceIcon(int index){return new int[]{4,5,6,7,1,2}[index];}
@@ -456,7 +491,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.12"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.13"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
