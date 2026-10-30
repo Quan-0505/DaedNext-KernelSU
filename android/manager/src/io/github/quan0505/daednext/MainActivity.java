@@ -23,6 +23,10 @@ public final class MainActivity extends Activity {
     private LinearLayout content, nav;
     private ScrollView scroll;
     private TextView pageTitle, notice, badge;
+    private GlassGooseView connectionArt;
+    private TextView heroTitle,heroDetail,networkName,networkPolicy,downloadValue,uploadValue,trafficScope;
+    private Button proxyToggle;
+    private boolean proxySwitchPending,proxySwitchTarget;
     private AlertDialog formDialog;
     private JSONObject status, wifiConfig, metrics;
     private String mode = "blacklist";
@@ -82,7 +86,7 @@ public final class MainActivity extends Activity {
         super.onBackPressed();
     }
     @Override protected void onResume() { super.onResume(); foreground = true; main.removeCallbacks(ticker); main.post(ticker); }
-    @Override protected void onPause() { foreground = false; main.removeCallbacks(ticker); super.onPause(); }
+    @Override protected void onPause() { foreground = false; main.removeCallbacks(ticker);if(connectionArt!=null)connectionArt.stopMotion(); super.onPause(); }
     @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); worker.shutdownNow(); api.clear(); super.onDestroy(); }
 
     private int dp(float n) { return (int)(n * getResources().getDisplayMetrics().density + .5f); }
@@ -166,7 +170,7 @@ public final class MainActivity extends Activity {
             final T value=result; final Exception problem=failure;
             main.post(()->{ if(isFinishing() || isDestroyed())return;
                 busy=false; for(View v:actions)v.setEnabled(true);
-                if(problem!=null) { error(problem); return; }
+                if(problem!=null) { if(proxySwitchPending){proxySwitchPending=false;if(connectionArt!=null)connectionArt.commit(ready().optBoolean("runtimeRequired"),ready().optBoolean("networkPolicyPaused"));updateDashboard();}error(problem); return; }
                 if(formDialog!=null){formDialog.dismiss();formDialog=null;}
                 notice.setText("已与本机服务同步"); notice.setTextColor(muted);
                 if(epoch==generation)try{done.accept(value);}catch(Exception e){error(e);}
@@ -181,11 +185,12 @@ public final class MainActivity extends Activity {
             if(value!=null && !value.isNull("pid") && selectedPage==0)try{sample=api.get("runtime/overview");}catch(Exception ignored){}
             JSONObject result=value,statistics=sample; Exception problem=failure;
             main.post(()->{reading=false;if(isFinishing()||isDestroyed())return;
+                if(proxySwitchPending)return;
                 if(problem!=null){ notice.setText(problem.getMessage()); notice.setTextColor(appearance.danger); if(force)error(problem); return; }
                 boolean firstStatus=status==null;
                 status=result;if(selectedPage==0)metrics=statistics;
                 notice.setText(serviceOn()?"本机服务已连接":"后台服务未启动");notice.setTextColor(muted);
-                if(page==0 && epoch==generation && !busy){content.removeAllViews();actions.clear();dashboard();}
+                if(page==0 && epoch==generation && !busy)updateDashboard();
                 else if(page==4 && firstStatus && epoch==generation && !busy){content.removeAllViews();actions.clear();settings();}
             });
         });
@@ -196,15 +201,12 @@ public final class MainActivity extends Activity {
         JSONObject r=ready(); boolean wanted=r.optBoolean("runtimeRequired"), active=r.optBoolean("runtimeRunning"), bypass=r.optBoolean("networkPolicyPaused");
         LinearLayout hero=column();hero.setGravity(Gravity.CENTER_HORIZONTAL);
         LinearLayout.LayoutParams heroParams=new LinearLayout.LayoutParams(-1,-2);heroParams.bottomMargin=dp(18);content.addView(hero,heroParams);
-        hero.addView(new ConnectionArtView(this,wanted,bypass,appearance.light),new LinearLayout.LayoutParams(-1,dp(175)));
+        connectionArt=new GlassGooseView(this,wanted,bypass,appearance.light);connectionArt.setMotionFinished(this::updateDashboard);
+        hero.addView(connectionArt,new LinearLayout.LayoutParams(-1,dp(190)));
         String state=status==null?"等待连接":!serviceOn()?"服务未启动":bypass&&wanted?"已自动直连":active?"代理运行中":wanted?"正在恢复连接":"代理已暂停";
-        TextView title=text(state,29,ink);title.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));title.setGravity(Gravity.CENTER);hero.addView(title);
-        TextView detail=text(bypass&&wanted?"当前 Wi-Fi 使用上游网络\n离开后，手机代理会自动接管。":active?"连接已由 DaedNext 接管\n按你的规则，自由切换出口。":"保留你的节点与规则\n启用后，按网络策略自动连接。",13,muted);
-        detail.setGravity(Gravity.CENTER);LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);detailParams.topMargin=dp(6);detailParams.bottomMargin=dp(10);hero.addView(detail,detailParams);
-        button(hero,wanted?"暂停代理":"启用代理",true,()->task(wanted?"正在暂停代理…":"正在启用代理…",()->{
-            if(!serviceOn())module.command("start");
-            api.post(wanted?"runtime/stop":"runtime/reload",new JSONObject());return module.status();
-        },s->{status=s;showPage(0);}));
+        heroTitle=text(state,29,ink);heroTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));heroTitle.setGravity(Gravity.CENTER);hero.addView(heroTitle);
+        heroDetail=text("",13,muted);heroDetail.setMinLines(2);heroDetail.setGravity(Gravity.CENTER);LinearLayout.LayoutParams detailParams=new LinearLayout.LayoutParams(-1,-2);detailParams.topMargin=dp(6);detailParams.bottomMargin=dp(10);hero.addView(heroDetail,detailParams);
+        proxyToggle=button(hero,wanted?"暂停代理":"启用代理",true,this::toggleProxy);
         LinearLayout network=card("");JSONObject w=status==null?null:status.optJSONObject("wifiPolicy");
         LinearLayout networkRow=row();network.addView(networkRow);
         android.widget.FrameLayout wifiIcon=new android.widget.FrameLayout(this);wifiIcon.setBackground(shape(appearance.control,15));
@@ -213,17 +215,16 @@ public final class MainActivity extends Activity {
         LinearLayout networkText=column();LinearLayout.LayoutParams networkParams=new LinearLayout.LayoutParams(0,-2,1);networkParams.leftMargin=dp(13);networkRow.addView(networkText,networkParams);
         String iface=status==null?"":status.optString("interface");
         String name=w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?"移动数据":"当前网络";
-        networkText.addView(text(name,18,ink));
-        hint(networkText,w==null?"等待网络策略":w.optBoolean("enabled")?(w.optString("mode").equals("blacklist")?"黑名单":"白名单")+" · "+(w.optBoolean("direct")?"手机直连":"使用代理"):"按现有规则连接");
+        networkName=text(name,18,ink);networkText.addView(networkName);networkPolicy=text("",13,muted);networkText.addView(networkPolicy);
         TextView chevron=text("›",25,muted);networkRow.addView(chevron);network.setContentDescription("网络策略");
         network.setOnClickListener(v->{if(!busy)showPage(3);});actions.add(network);
 
         workspaceEntries();
 
         LinearLayout rates=row();LinearLayout.LayoutParams ratesParams=new LinearLayout.LayoutParams(-1,-2);ratesParams.bottomMargin=dp(12);content.addView(rates,ratesParams);
-        metric(rates,"下载速度",metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s",appearance.light?0xff405d97:0xffb8c8ff,true);
-        metric(rates,"上传速度",metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s",appearance.light?0xff795399:0xffd0b7fb,false);
-        TextView scope=text(bypass&&wanted?"直连期间，Wi-Fi 上游流量不计入这里。":"仅统计由手机代理转发的流量。",10,muted);scope.setPadding(dp(3),0,dp(3),dp(12));content.addView(scope);
+        downloadValue=metric(rates,"下载速度","—",appearance.light?0xff405d97:0xffb8c8ff,true);
+        uploadValue=metric(rates,"上传速度","—",appearance.light?0xff795399:0xffd0b7fb,false);
+        trafficScope=text("",10,muted);trafficScope.setPadding(dp(3),0,dp(3),dp(12));content.addView(trafficScope);
 
         LinearLayout advanced=card("");LinearLayout advancedRow=row();advanced.addView(advancedRow);
         LinearLayout advancedText=column();advancedRow.addView(advancedText,new LinearLayout.LayoutParams(0,-2,1));
@@ -231,11 +232,38 @@ public final class MainActivity extends Activity {
         advanced.setOnClickListener(v->{if(!busy)panel("/");});actions.add(advanced);
         button(content,"查看运行详情",false,()->task("正在读取运行概况…",()->api.get("runtime/overview"),this::showMetrics));
         if(status==null)button(content,"连接模块 / 申请 Root 授权",false,()->refreshStatus(true));
+        updateDashboard();
     }
-    private void metric(LinearLayout parent,String label,String value,int color,boolean first){
+    private void updateDashboard(){
+        if(page!=0||connectionArt==null||heroTitle==null)return;
+        JSONObject r=ready(),w=status==null?null:status.optJSONObject("wifiPolicy");boolean wanted=r.optBoolean("runtimeRequired"),active=r.optBoolean("runtimeRunning"),bypass=r.optBoolean("networkPolicyPaused");
+        connectionArt.sync(wanted,bypass);
+        heroTitle.setText(proxySwitchPending?(proxySwitchTarget?"正在启用代理":"正在暂停代理"):status==null?"等待连接":!serviceOn()?"服务未启动":bypass&&wanted?"已自动直连":active?"代理运行中":wanted?"正在恢复连接":"代理已暂停");
+        heroDetail.setText(proxySwitchPending?"正在与本机服务同步…":bypass&&wanted?"当前 Wi-Fi 使用上游网络\n离开后，手机代理会自动接管。":active?"连接已由 DaedNext 接管\n按你的规则，自由切换出口。":"保留你的节点与规则\n启用后，按网络策略自动连接。");
+        proxyToggle.setText(proxySwitchPending?"正在切换…":wanted?"暂停代理":"启用代理");proxyToggle.setEnabled(!busy&&!proxySwitchPending&&!connectionArt.isAnimating()&&status!=null);
+        String iface=status==null?"":status.optString("interface");networkName.setText(w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?"移动数据":"当前网络");
+        networkPolicy.setText(w==null?"等待网络策略":w.optBoolean("enabled")?(w.optString("mode").equals("blacklist")?"黑名单":"白名单")+" · "+(w.optBoolean("direct")?"手机直连":"使用代理"):"按现有规则连接");
+        downloadValue.setText(metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s");uploadValue.setText(metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s");
+        trafficScope.setText(bypass&&wanted?"直连期间，Wi-Fi 上游流量不计入这里。":"仅统计由手机代理转发的流量。");
+    }
+    private void toggleProxy(){
+        if(busy||proxySwitchPending||connectionArt==null||connectionArt.isAnimating()||status==null)return;
+        boolean enable=!ready().optBoolean("runtimeRequired");proxySwitchPending=true;proxySwitchTarget=enable;connectionArt.beginSwitch(enable);updateDashboard();
+        task(enable?"正在启用代理…":"正在暂停代理…",()->{
+            JSONObject result=new JSONObject();
+            try{if(!serviceOn())module.command("start");api.post(enable?"runtime/reload":"runtime/stop",new JSONObject());result.put("status",module.status());}
+            catch(Exception problem){result.put("error",problem.getMessage()==null?"切换失败":problem.getMessage());try{result.put("status",module.status());}catch(Exception ignored){}}
+            return result;
+        },result->{
+            status=result.optJSONObject("status");proxySwitchPending=false;
+            connectionArt.commit(ready().optBoolean("runtimeRequired"),ready().optBoolean("networkPolicyPaused"));updateDashboard();
+            if(result.has("error")){error(new Exception(result.getString("error")+(status==null?"；当前状态待确认，请刷新后查看":"")));if(status==null)refreshStatus(false);}
+        });
+    }
+    private TextView metric(LinearLayout parent,String label,String value,int color,boolean first){
         LinearLayout box=column();box.setPadding(dp(17),dp(16),dp(12),dp(16));box.setBackground(shape(card,22));
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);if(first)params.rightMargin=dp(5);else params.leftMargin=dp(5);parent.addView(box,params);
-        box.addView(text(label,11,muted));TextView number=text(value,22,color);number.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));box.addView(number);
+        box.addView(text(label,11,muted));TextView number=text(value,22,color);number.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));box.addView(number);return number;
     }
     private void showMetrics(JSONObject j){
         new AlertDialog.Builder(this).setTitle("运行概况").setMessage("上传速度："+bytes(j.optDouble("uploadRate"))+"/s\n下载速度："+bytes(j.optDouble("downloadRate"))+"/s\n累计上传："+bytes(j.optDouble("uploadTotal"))+"\n累计下载："+bytes(j.optDouble("downloadTotal"))+"\n内存："+bytes(j.optDouble("rssBytes"))+"\nCPU："+String.format(Locale.ROOT,"%.1f%%",j.optDouble("cpuUsagePercent",0))).setPositiveButton("完成",null).show();
@@ -427,7 +455,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.5"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.6"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
