@@ -32,9 +32,15 @@ public final class MainActivity extends Activity {
     private boolean busy, foreground, reading, wifiDraft;
     private int page, generation, returnPage;
     private long detailGroupId;
+    private JSONObject detailSection;
+    private String detailKind;
+    private JSONArray resourceGroups=new JSONArray();
     private Appearance appearance;
     private int ink, muted, background, card, border, accent;
-    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置", "配置", "群组"};
+    private final String[] pages = {"仪表盘", "节点", "订阅", "网络", "设置", "配置", "群组", "DNS", "路由", "资源"};
+    private static final int[] RESOURCE_PAGES={5,7,8,6,1,2};
+    private static final String[] RESOURCE_NAMES={"配置","DNS","路由","群组","节点","订阅"};
+    private static final String[] RESOURCE_HINTS={"运行参数与探测","上游解析与查询分流","规则顺序与流量出口","候选节点与优选策略","独立与订阅节点","订阅来源与自动更新"};
     private final Runnable ticker = new Runnable() { public void run() {
         if (foreground) { refreshStatus(false); main.postDelayed(this, 6000); }
     }};
@@ -52,7 +58,7 @@ public final class MainActivity extends Activity {
         TextView brand = text("DaedNext", 22, ink); brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         brandRow.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
         badge=text("KernelSU",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
-        badge.setOnClickListener(v->{if(page>=5)onBackPressed();});
+        badge.setOnClickListener(v->{if(page>=5||page==1)onBackPressed();});
         pageTitle = text("你的连接", 31, ink); pageTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);titleParams.topMargin=dp(15);header.addView(pageTitle,titleParams);
         root.addView(header);
@@ -68,7 +74,10 @@ public final class MainActivity extends Activity {
     @Override protected void onSaveInstanceState(Bundle out) { out.putInt("page",page);out.putInt("returnPage",returnPage); super.onSaveInstanceState(out); }
     @Override public void onBackPressed() {
         if(busy)return;
+        if(page==9){showPage(0);return;}
+        if(page==1){showPage(9);return;}
         if(page==6&&detailGroupId>0){showPage(6);return;}
+        if((page==7||page==8)&&detailSection!=null){showPage(page);return;}
         if(page>=5){showPage(returnPage);return;}
         super.onBackPressed();
     }
@@ -106,17 +115,18 @@ public final class MainActivity extends Activity {
     }
     private void buildNav() {
         nav.removeAllViews();
+        int[] destinations={0,9,2,3,4};String[] labels={"首页","资源","订阅","网络","设置"};
         for (int i=0;i<5;i++) {
-            final int index=i; LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
+            final int index=destinations[i];boolean selected=index==page||(index==9&&(page==1||page>=5));LinearLayout item=column(); item.setGravity(Gravity.CENTER); item.setPadding(0,dp(3),0,dp(3));
             android.widget.FrameLayout iconFrame=new android.widget.FrameLayout(this);
-            if(i==page)iconFrame.setBackground(shape(appearance.selected,13));
-            NavIconView icon=new NavIconView(this,i,i==page?accent:muted);
+            if(selected)iconFrame.setBackground(shape(appearance.selected,13));
+            NavIconView icon=new NavIconView(this,i==1?8:i,selected?accent:muted);
             android.widget.FrameLayout.LayoutParams iconParams=new android.widget.FrameLayout.LayoutParams(dp(23),dp(23),Gravity.CENTER);iconFrame.addView(icon,iconParams);
             item.addView(iconFrame,new LinearLayout.LayoutParams(dp(42),dp(31)));
-            TextView label=text(pages[i].equals("仪表盘")?"首页":pages[i],10,i==page?ink:muted);
+            TextView label=text(labels[i],10,selected?ink:muted);
             label.setGravity(Gravity.CENTER);
             item.addView(label,new LinearLayout.LayoutParams(-1,-2));
-            item.setContentDescription(pages[i]); item.setOnClickListener(v -> {
+            item.setContentDescription(labels[i]); item.setOnClickListener(v -> {
                 if (busy || index==page) return;
                 if (page==3 && wifiDraft) new AlertDialog.Builder(this).setTitle("尚未保存 Wi-Fi 设置")
                     .setMessage("离开将放弃当前修改。")
@@ -127,14 +137,16 @@ public final class MainActivity extends Activity {
     }
     private void showPage(int target) {
         page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?"你的连接":pages[page]); buildNav(); wifiDraft=false;
-        detailGroupId=0;badge.setText(page>=5?"‹ 返回":"KernelSU");
+        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1?"‹ 返回":"KernelSU");
         if (page==0) dashboard();
         else if (page==1) loadNodes();
         else if (page==2) loadSubscriptions();
         else if (page==3) loadWifi();
         else if(page==4)settings();
         else if(page==5)loadConfigs();
-        else loadGroups();
+        else if(page==6)loadGroups();
+        else if(page==7||page==8)loadSections(page==7?"dns":"routings");
+        else loadResourceHub();
         scroll.post(()->scroll.scrollTo(0,0));
         content.setAlpha(0);content.animate().alpha(1).setDuration(180).start();
     }
@@ -231,14 +243,46 @@ public final class MainActivity extends Activity {
     private static String bytes(double n) { if(Double.isNaN(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }
     private void panel(String path) { Intent intent=new Intent(this,PanelActivity.class);intent.putExtra("path",path);startActivity(intent); }
     private void workspaceEntries() {
-        LinearLayout entries=card("配置与群组");
-        hint(entries,"管理核心参数、代理出口与自动优选策略。");
-        paired(entries,"配置",()->openWorkspace(5),"群组",()->openWorkspace(6));
+        LinearLayout entries=card("资源工作台");hint(entries,"把连接的每一层，都安排妥当。");
+        for(int i=0;i<RESOURCE_NAMES.length;i+=2){final int left=i,right=i+1;LinearLayout line=row();entries.addView(line);
+            resourceTile(line,left,()->openWorkspace(RESOURCE_PAGES[left]));resourceTile(line,right,()->openWorkspace(RESOURCE_PAGES[right]));}
     }
-    private void openWorkspace(int target){if(page<5)returnPage=page;showPage(target);}
+    private void openWorkspace(int target){returnPage=page==9?9:page<5?page:9;showPage(target);}
+    private int resourceIcon(int index){return new int[]{4,5,6,7,1,2}[index];}
+    private int resourceColor(int index){return appearance.light?new int[]{0xff6352a3,0xff3e7d78,0xff486e9f,0xff805d86,0xff6070a3,0xff91734a}[index]:new int[]{0xffb4aeff,0xff8fcac1,0xff9bb8e5,0xffd1b0d8,0xffabb5e5,0xffdcc394}[index];}
+    private void resourceTile(LinearLayout line,int index,Runnable action){
+        LinearLayout tile=row();tile.setPadding(dp(12),dp(11),dp(12),dp(11));tile.setBackground(shape(appearance.control,18));
+        tile.addView(new NavIconView(this,resourceIcon(index),resourceColor(index)),new LinearLayout.LayoutParams(dp(20),dp(20)));
+        TextView title=text(RESOURCE_NAMES[index],14,ink);LinearLayout.LayoutParams textParams=new LinearLayout.LayoutParams(-2,-2);textParams.leftMargin=dp(9);tile.addView(title,textParams);
+        LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(49),1);p.topMargin=dp(9);p.setMarginEnd(dp(index%2==0?5:0));p.setMarginStart(dp(index%2==0?0:5));line.addView(tile,p);
+        tile.setContentDescription(RESOURCE_NAMES[index]);tile.setOnClickListener(v->{if(!busy)action.run();});actions.add(tile);
+    }
+    private void resourceHeading(int index,String note){
+        LinearLayout c=card("");LinearLayout title=row();c.addView(title);
+        title.addView(new NavIconView(this,resourceIcon(index),resourceColor(index)),new LinearLayout.LayoutParams(dp(27),dp(27)));
+        TextView name=text(RESOURCE_NAMES[index]+"管理",22,ink);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-2,-2);p.leftMargin=dp(12);title.addView(name,p);hint(c,note);
+    }
+    private void loadResourceHub(){
+        TextView introduction=text("配置、解析与出口，一处管理。",13,muted);introduction.setPadding(dp(3),dp(1),dp(3),dp(18));content.addView(introduction);
+        LinearLayout gridRow=null;
+        for(int i=0;i<RESOURCE_NAMES.length;i++){
+            if(i%2==0){gridRow=row();gridRow.setGravity(Gravity.TOP);content.addView(gridRow);}
+            final int index=i;LinearLayout c=column();c.setPadding(dp(16),dp(16),dp(16),dp(14));c.setBackground(shape(card,24));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(0,dp(148),1);cp.bottomMargin=dp(12);if(i%2==0)cp.rightMargin=dp(6);else cp.leftMargin=dp(6);gridRow.addView(c,cp);
+            LinearLayout line=row();c.addView(line);
+            FrameLayout symbol=new FrameLayout(this);symbol.setBackground(shape(appearance.control,15));symbol.addView(new NavIconView(this,resourceIcon(i),resourceColor(i)),new FrameLayout.LayoutParams(dp(25),dp(25),Gravity.CENTER));line.addView(symbol,new LinearLayout.LayoutParams(dp(42),dp(42)));
+            TextView count=text("—",13,muted);count.setGravity(Gravity.END|Gravity.CENTER_VERTICAL);count.setTag("resource-count-"+i);line.addView(count,new LinearLayout.LayoutParams(0,-2,1));
+            TextView title=text(RESOURCE_NAMES[i]+"  ›",18,ink);title.setPadding(0,dp(13),0,dp(4));c.addView(title);c.addView(text(RESOURCE_HINTS[i],11,muted));
+            c.setContentDescription(RESOURCE_NAMES[i]);c.setOnClickListener(v->{if(!busy)openWorkspace(RESOURCE_PAGES[index]);});actions.add(c);
+        }
+        task("正在读取资源概况…",()->{
+            String[] endpoints={"configs?summary=true","dns?summary=true","routings?summary=true","groups?summary=true","nodes","subscriptions"};int[] counts=new int[6];
+            for(int i=0;i<endpoints.length;i++)counts[i]=items(api.get(endpoints[i])).length();counts[4]+=items(api.get("nodes?independent=false")).length();return counts;
+        },counts->{for(int i=0;i<counts.length;i++){TextView view=content.findViewWithTag("resource-count-"+i);if(view!=null)view.setText(String.format(Locale.ROOT,"%02d",counts[i]));}});
+    }
     private JSONArray items(JSONObject j) { JSONArray a=j.optJSONArray("items");return a==null?new JSONArray():a; }
     private void loadNodes() {
-        LinearLayout tools=card("节点管理");hint(tools,"导入节点、查看延迟，使用策略组管理代理出口。");
+        resourceHeading(4,"查看协议与延迟，管理独立和订阅节点。");
+        LinearLayout tools=card("");hint(tools,"导入节点、查看延迟，使用策略组管理代理出口。");
         paired(tools,"导入节点链接",this::importNodes,"策略组",()->openWorkspace(6));
         button(tools,"刷新节点 / 延迟",false,()->showPage(1));
         task("正在读取节点…",()->{
@@ -298,6 +342,7 @@ public final class MainActivity extends Activity {
         form("编辑节点",fields,()->task("正在保存节点…",()->api.patch("nodes/"+node.optLong("id"),new JSONObject().put("tag",name.getText().toString()).put("link",link.getText().toString())),j->showPage(1)));
     }
     private void loadSubscriptions() {
+        resourceHeading(5,"让节点来源井然有序，更新与管理更从容。");
         LinearLayout tools=card("订阅管理");hint(tools,"添加和更新订阅，集中管理你的代理节点。");
         button(tools,"添加订阅",true,()->subscriptionForm(null));button(tools,"刷新列表",false,()->showPage(2));
         task("正在读取订阅…",()->api.get("subscriptions"),j->{
@@ -382,10 +427,11 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.4"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.5"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {
+        resourceHeading(0,"一份配置，掌握连接的基础行为。");
         LinearLayout top=card("运行参数");hint(top,"编辑核心参数和连通性探测。保存后，点击“应用当前配置”使修改生效。");
         paired(top,"新建配置",()->task("正在准备配置…",()->api.get("configs"),data->{
             JSONArray list=items(data);JSONObject template=null;
@@ -471,6 +517,7 @@ public final class MainActivity extends Activity {
     private static final String[] POLICY_LABELS={"平滑延迟优选","最近十次平均优选","最低延迟","随机选择","固定单节点"};
     private String policyLabel(String key){for(int i=0;i<POLICIES.length;i++)if(POLICIES[i].equals(key))return POLICY_LABELS[i];return key;}
     private void loadGroups(){
+        resourceHeading(3,"把候选节点组织成适合你的出口。");
         LinearLayout top=card("代理出口");hint(top,"为节点和订阅设置出口策略。编辑后在配置页应用，使修改生效。");
         paired(top,"新建群组",()->groupForm(null),"刷新",()->showPage(6));
         task("正在读取群组…",()->api.get("groups?summary=true"),result->{
@@ -578,6 +625,160 @@ public final class MainActivity extends Activity {
                 task("正在保存订阅筛选…",()->api.post("groups/"+groupId+"/subscriptions",body),j->groupDetails(groupId));
             }catch(Exception e){error(e);}
         });
+    }
+    // DNS and routing share the resource shell, with native per-item editors.
+    private int sectionPage(String kind){return kind.equals("dns")?7:8;}
+    private String sectionKey(String kind){return kind.equals("dns")?"dns":"routing";}
+    private void loadSections(String kind){
+        boolean dns=kind.equals("dns");int target=sectionPage(kind);resourceHeading(dns?1:2,dns?"为每一次查询，安排合适的解析路径。":"从第一条规则到最终出口，清晰掌握流量去向。");
+        LinearLayout controls=card(dns?"解析方案":"路由方案");hint(controls,"选择与编辑分开保存，应用配置后才更新当前连接。");
+        paired(controls,dns?"新建 DNS":"新建路由",()->task("正在准备方案…",()->api.get(kind),result->{
+            JSONArray list=items(result);JSONObject template=null;for(int i=0;i<list.length();i++)if(list.getJSONObject(i).optBoolean("selected"))template=list.getJSONObject(i);
+            if(template==null&&list.length()>0)template=list.getJSONObject(0);sectionNameForm(kind,template,true);
+        }),"刷新",()->showPage(target));
+        task("正在读取方案…",()->api.get(kind),result->{
+            JSONArray list=items(result);if(list.length()==0)hint(card("还没有方案"),"新建一份方案，再添加上游或规则。");
+            for(int i=0;i<list.length();i++){
+                JSONObject section=list.getJSONObject(i);LinearLayout c=card(section.optString("name","未命名方案"));
+                c.addView(text(section.optBoolean("selected")?"● 已选方案":"备用方案",12,section.optBoolean("selected")?accent:muted));
+                String raw=section.optString(sectionKey(kind));
+                try{if(dns){String wrapped=ResourceText.wrap("dns",raw);ResourceText.Block area=ResourceText.path(wrapped,"dns","upstream");hint(c,(area==null?0:ResourceText.entries(wrapped,area.open+1,area.close).size())+" 个上游  ·  "+ResourceText.rules(wrapped,true,"request").size()+" 项查询规则");}
+                    else hint(c,ResourceText.rules(raw,false,"").size()+" 项规则  ·  自上而下匹配");
+                }catch(Exception e){hint(c,"自定义方案 · 可在完整文本中检查");}
+                paired(c,dns?"管理解析":"管理规则",()->sectionDetails(kind,section.optLong("id")),"更多",()->sectionMenu(kind,section));
+            }
+        });
+    }
+    private void sectionMenu(String kind,JSONObject section){
+        new AlertDialog.Builder(this).setTitle(section.optString("name")).setItems(new String[]{"选择此方案","复制方案","重命名","删除方案"},(d,index)->{
+            if(index==0)task("正在选择方案…",()->api.post(kind+"/"+section.optLong("id")+"/select",new JSONObject()),j->{showPage(sectionPage(kind));Toast.makeText(this,"已选择，应用配置后生效",Toast.LENGTH_LONG).show();});
+            else if(index==1)sectionNameForm(kind,section,true);
+            else if(index==2)sectionNameForm(kind,section,false);
+            else if(section.optBoolean("selected"))error(new Exception("请先选择其他方案，再删除当前方案"));
+            else confirm("删除方案","将删除“"+section.optString("name")+"”。",()->task("正在删除方案…",()->api.delete(kind+"/"+section.optLong("id")),j->showPage(sectionPage(kind))));
+        }).show();
+    }
+    private void sectionNameForm(String kind,JSONObject template,boolean copy){
+        LinearLayout fields=formFields();EditText name=field(fields,"方案名称",copy?"新"+(kind.equals("dns")?"DNS":"路由")+"方案":template.optString("name"),false,false);
+        if(copy)hint(fields,template==null?"创建后可添加上游与规则。":"以“"+template.optString("name")+"”为模板，原方案保持不变。");
+        form(copy?"新建方案":"重命名",fields,()->{
+            String title=name.getText().toString().trim();if(title.isEmpty()){error(new Exception("请填写方案名称"));return;}
+            task("正在保存方案…",()->{
+                JSONObject body=new JSONObject().put("name",title);
+                if(copy){String raw=template==null?(kind.equals("dns")?"dns {\n upstream { resolver: 'udp://223.5.5.5:53' }\n routing { request { fallback: resolver } }\n}\n":"fallback: direct\n"):template.getString(sectionKey(kind));validateSection(kind,raw);body.put(sectionKey(kind),raw);return api.post(kind,body);}
+                ensureSectionVersion(kind,template);return api.patch(kind+"/"+template.getLong("id"),body);
+            },j->{if(copy)sectionDetails(kind,j.getLong("id"));else showPage(sectionPage(kind));});
+        });
+    }
+    private void ensureSectionVersion(String kind,JSONObject section)throws Exception{
+        JSONObject latest=api.get(kind+"/"+section.getLong("id"));if(latest.optLong("version")!=section.optLong("version"))throw new Exception("方案已被其他页面修改，请取消并刷新后重试");
+    }
+    private void validateSection(String kind,String raw)throws Exception{
+        String full=api.get("user/me/dae-config-file").getString("content"),key=sectionKey(kind);
+        ResourceText.Block block=ResourceText.block(full,key,0,full.length());String wrapped=ResourceText.wrap(key,raw);
+        String candidate=block==null?full+"\n"+wrapped:full.substring(0,block.start)+wrapped+full.substring(block.close+1);
+        api.post("user/me/dae-config-file/preview",new JSONObject().put("content",candidate));
+    }
+    private void saveSection(String kind,JSONObject section,String raw){
+        task("正在校验并保存…",()->{validateSection(kind,raw);ensureSectionVersion(kind,section);return api.patch(kind+"/"+section.getLong("id"),new JSONObject().put(sectionKey(kind),raw));},j->{sectionDetails(kind,section.optLong("id"));Toast.makeText(this,"已保存，应用配置后生效",Toast.LENGTH_LONG).show();});
+    }
+    private void sectionDetails(String kind,long id){
+        task("正在读取方案…",()->new JSONObject().put("section",api.get(kind+"/"+id)).put("groups",api.get("groups?summary=true")),result->{
+            JSONObject section=result.getJSONObject("section");resourceGroups=items(result.getJSONObject("groups"));
+            content.removeAllViews();actions.clear();generation++;detailSection=section;detailKind=kind;pageTitle.setText(section.optString("name"));
+            LinearLayout top=card(kind.equals("dns")?"DNS 解析":"流量路由");hint(top,section.optBoolean("selected")?"当前已选方案 · 修改后需应用配置":"备用方案 · 可先编辑再选择");
+            paired(top,"返回列表",()->showPage(sectionPage(kind)),"完整文本",()->sectionSourceForm(kind,section));
+            try{if(kind.equals("dns"))dnsCards(section);else ruleCards(kind,section,"");}
+            catch(Exception e){hint(card("保留自定义内容"),"此方案包含复杂结构，可使用完整文本编辑；原文已保留。");}
+            scroll.post(()->scroll.scrollTo(0,0));
+        });
+    }
+    private void sectionSourceForm(String kind,JSONObject section){
+        LinearLayout fields=formFields();hint(fields,"高级语法可在这里编辑，保存前会检查完整配置。");EditText source=field(fields,"完整方案",section.optString(sectionKey(kind)),true,false);source.setTypeface(Typeface.MONOSPACE);
+        form("完整文本",fields,()->saveSection(kind,section,source.getText().toString()));
+    }
+    private String[] upstream(ResourceText.Entry entry){
+        java.util.regex.Matcher m=java.util.regex.Pattern.compile("(?s)^([\\p{L}_][\\p{L}\\p{N}_-]*)\\s*:\\s*(['\"])(.*)\\2$").matcher(entry.text);
+        return m.matches()?new String[]{m.group(1),m.group(3).replace("\\'","'").replace("\\\\","\\")}:null;
+    }
+    private List<String> dnsAliases(String raw){
+        ArrayList<String> aliases=new ArrayList<>();ResourceText.Block b=ResourceText.path(raw,"dns","upstream");
+        if(b!=null)for(ResourceText.Entry entry:ResourceText.entries(raw,b.open+1,b.close)){String[] value=upstream(entry);if(value!=null)aliases.add(value[0]);}return aliases;
+    }
+    private String endpointLabel(String value){
+        try{java.net.URI uri=new java.net.URI(value);if(uri.getRawQuery()!=null||uri.getRawUserInfo()!=null)return uri.getScheme()+"://"+(uri.getHost()==null?"上游地址":uri.getHost())+(uri.getPort()<0?"":":"+uri.getPort())+(uri.getPath()==null?"":uri.getPath());}catch(Exception ignored){}return value;
+    }
+    private void dnsCards(JSONObject section){
+        String raw=ResourceText.wrap("dns",section.optString("dns"));LinearLayout heading=card("解析上游");hint(heading,"每个上游拥有独立名称，供查询规则选择。");button(heading,"添加上游",false,()->upstreamForm(section,null));
+        ResourceText.Block block=ResourceText.path(raw,"dns","upstream");
+        if(block!=null)for(ResourceText.Entry entry:ResourceText.entries(raw,block.open+1,block.close)){
+            String[] values=upstream(entry);if(values==null){hint(card("自定义上游"),entry.text);continue;}
+            LinearLayout c=card(values[0]);hint(c,endpointLabel(values[1]));
+            paired(c,"编辑地址",()->upstreamForm(section,entry),"移除",()->{
+                for(String phase:new String[]{"request","response"})for(ResourceText.Entry rule:ResourceText.rules(raw,true,phase)){
+                    String destination=rule.fallback()?rule.text.substring(rule.text.indexOf(':')+1).trim():rule.arrow()<0?"":rule.text.substring(rule.arrow()+2).trim();
+                    if(destination.equals(values[0])||destination.startsWith(values[0]+"(")){error(new Exception("此上游仍被规则引用，请先修改对应规则"));return;}
+                }
+                confirm("移除上游","将移除“"+values[0]+"”。",()->saveSection("dns",section,ResourceText.remove(raw,entry)));
+            })[1].setTextColor(appearance.danger);
+        }
+        ruleCards("dns",section,"request");ruleCards("dns",section,"response");
+    }
+    private void upstreamForm(JSONObject section,ResourceText.Entry existing){
+        String raw=ResourceText.wrap("dns",section.optString("dns"));String[] original=existing==null?null:upstream(existing);
+        LinearLayout fields=formFields();EditText alias=field(fields,"上游名称",original==null?"":original[0],false,false);if(existing!=null)alias.setEnabled(false);
+        EditText address=field(fields,"上游地址",original==null?"":original[1],false,false);hint(fields,"例如 udp://223.5.5.5:53 或 https://dns.google/dns-query。已有名称保持固定，避免影响引用。");
+        form(existing==null?"添加上游":"编辑上游",fields,()->{
+            try{String name=alias.getText().toString().trim(),url=address.getText().toString().trim();if(!name.matches("[A-Za-z_][A-Za-z0-9_-]*"))throw new Exception("名称请使用字母、数字、下划线或连字符");if(url.isEmpty()||url.indexOf('\n')>=0)throw new Exception("请填写单行上游地址");
+                String line=name+": "+ResourceText.quoted(url),edited;
+                if(existing!=null)edited=ResourceText.replace(raw,existing,line);
+                else{if(dnsAliases(raw).contains(name))throw new Exception("上游名称已存在");String prepared=ResourceText.ensureDnsPath(raw,"upstream");ResourceText.Block b=ResourceText.path(prepared,"dns","upstream");edited=prepared.substring(0,b.close)+"\n  "+line+"\n"+prepared.substring(b.close);}
+                saveSection("dns",section,edited);
+            }catch(Exception e){error(e);}
+        });
+    }
+    private String[] ruleDestinations(String kind,String phase,String raw){
+        LinkedHashSet<String> values=new LinkedHashSet<>();if(kind.equals("dns")){values.addAll(dnsAliases(raw));if(phase.equals("response")){values.add("accept");values.add("reject");}else values.add("asis");}
+        else{values.add("direct");values.add("block");for(int i=0;i<resourceGroups.length();i++)values.add(resourceGroups.optJSONObject(i).optString("name"));}
+        return values.toArray(new String[0]);
+    }
+    private void ruleCards(String kind,JSONObject section,String phase){
+        boolean dns=kind.equals("dns");String raw=dns?ResourceText.wrap("dns",section.optString("dns")):section.optString("routing");
+        List<ResourceText.Entry> all=ResourceText.rules(raw,dns,phase);ArrayList<ResourceText.Entry> rules=new ArrayList<>();ResourceText.Entry fallback=null;
+        for(ResourceText.Entry entry:all){if(entry.fallback())fallback=entry;else rules.add(entry);}
+        LinearLayout head=card(dns?(phase.equals("request")?"查询规则":"响应规则"):"匹配规则");hint(head,dns?(phase.equals("request")?"按查询条件选择解析上游。":"对返回结果接受、拒绝或重新选择上游。"):"自上而下匹配，靠前的规则优先。");button(head,"添加规则",false,()->ruleForm(kind,section,phase,null,false));
+        for(int i=0;i<rules.size();i++){
+            final int index=i;ResourceText.Entry entry=rules.get(i);int arrow=entry.arrow();LinearLayout c=card(String.format(Locale.ROOT,"规则 %02d",i+1));
+            if(arrow<0){hint(c,entry.text);hint(c,"自定义结构，完整文本中可编辑");continue;}
+            TextView condition=text(entry.text.substring(0,arrow).trim(),13,ink);condition.setTypeface(Typeface.MONOSPACE);c.addView(condition);c.addView(text("→  "+entry.text.substring(arrow+2).trim(),17,accent));
+            paired(c,"编辑规则",()->ruleForm(kind,section,phase,entry,false),"更多",()->{
+                ArrayList<String> options=new ArrayList<>();if(index>0)options.add("上移");if(index+1<rules.size())options.add("下移");options.add("删除规则");
+                new AlertDialog.Builder(this).setTitle("规则 "+(index+1)).setItems(options.toArray(new String[0]),(d,choice)->{
+                    String action=options.get(choice);if(action.equals("删除规则"))confirm("删除规则","将删除这条匹配规则。",()->saveSection(kind,section,ResourceText.remove(raw,entry)));
+                    else saveSection(kind,section,ResourceText.swap(raw,entry,rules.get(index+(action.equals("上移")?-1:1))));
+                }).show();
+            });
+        }
+        ResourceText.Entry last=fallback;LinearLayout end=card("兜底行为");hint(end,last==null?"尚未显式设置":last.text.substring(last.text.indexOf(':')+1).trim());
+        button(end,"设置兜底",false,()->ruleForm(kind,section,phase,last,true));
+    }
+    private void ruleForm(String kind,JSONObject section,String phase,ResourceText.Entry existing,boolean fallback){
+        boolean dns=kind.equals("dns");String raw=dns?ResourceText.wrap("dns",section.optString("dns")):section.optString("routing");
+        LinearLayout fields=formFields();String value=existing==null?"":existing.text;int arrow=existing==null?-1:existing.arrow();
+        EditText condition=fallback?null:field(fields,"匹配条件",arrow<0?"":value.substring(0,arrow).trim(),true,false);
+        if(condition!=null){String[] presets=dns?(phase.equals("request")?new String[]{"qname(geosite:cn)","qtype(aaaa)"}:new String[]{"ip(geoip:cn)","upstream(resolver)"}):new String[]{"domain(suffix:example.com)","dip(geoip:cn)","l4proto(udp) && dport(443)"};
+            choicesTemplate(fields,condition,presets);hint(fields,"可组合多个条件，保存前会按完整配置校验。");}
+        String current=fallback?(existing==null?(dns?(phase.equals("response")?"accept":"asis"):"direct"):value.substring(value.indexOf(':')+1).trim()):(arrow<0?(dns?(phase.equals("response")?"accept":"asis"):"direct"):value.substring(arrow+2).trim());
+        Spinner destination=choices(fields,dns?"解析目标 / 行为":"流量出口",current,ruleDestinations(kind,phase,raw));
+        form(fallback?"设置兜底":existing==null?"添加规则":"编辑规则",fields,()->{
+            try{String target=destination.getSelectedItem().toString();String expr=condition==null?"":condition.getText().toString().trim();if(!fallback&&(expr.isEmpty()||ResourceText.operator(expr,"->")>=0))throw new Exception("请填写匹配条件，出口通过下方选项选择");
+                String line=fallback?"fallback: "+target:expr+" -> "+target;
+                String edited=existing==null?ResourceText.insertRule(raw,dns,phase,line):ResourceText.replace(raw,existing,line);saveSection(kind,section,edited);
+            }catch(Exception e){error(e);}
+        });
+    }
+    private void choicesTemplate(LinearLayout parent,EditText condition,String[] presets){
+        button(parent,"使用条件模板",false,()->new AlertDialog.Builder(this).setTitle("选择条件模板").setItems(presets,(d,index)->condition.setText(presets[index])).show());
     }
     private void option(LinearLayout parent,String title,boolean checked,String command) {
         Switch option=new Switch(this);option.setText(title);option.setTextColor(ink);option.setChecked(checked);option.setPadding(0,dp(10),0,dp(10));parent.addView(option);actions.add(option);

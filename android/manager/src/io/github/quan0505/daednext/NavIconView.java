@@ -24,6 +24,14 @@ final class NavIconView extends View {
             case 3:
                 canvas.drawArc(new RectF(2,5,26,27),223,94,false,paint);canvas.drawArc(new RectF(7,11,21,25),222,96,false,paint);
                 paint.setStyle(Paint.Style.FILL);canvas.drawCircle(14,23,1.8f,paint);break;
+            case 5:
+                canvas.drawCircle(14,14,10,paint);canvas.drawOval(new RectF(9,4,19,24),paint);canvas.drawLine(5,10,23,10,paint);canvas.drawLine(5,18,23,18,paint);break;
+            case 6:
+                canvas.drawCircle(6,7,3,paint);canvas.drawCircle(22,21,3,paint);p.moveTo(9,7);p.lineTo(20,7);p.cubicTo(25,7,25,14,19,14);p.lineTo(9,14);p.cubicTo(3,14,3,21,8,21);p.lineTo(19,21);canvas.drawPath(p,paint);break;
+            case 7:
+                canvas.drawRoundRect(new RectF(4,5,24,24),3,3,paint);canvas.drawLine(4,11,24,11,paint);canvas.drawLine(11,5,11,24,paint);break;
+            case 8:
+                for(int row=0;row<2;row++)for(int col=0;col<2;col++)canvas.drawRoundRect(new RectF(4+col*12,4+row*12,12+col*12,12+row*12),2,2,paint);break;
             default:
                 canvas.drawCircle(14,14,8,paint);canvas.drawCircle(14,14,3,paint);
                 for(int i=0;i<8;i++){double a=i*Math.PI/4;canvas.drawLine(14+(float)Math.cos(a)*8,14+(float)Math.sin(a)*8,14+(float)Math.cos(a)*11,14+(float)Math.sin(a)*11,paint);}break;
