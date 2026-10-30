@@ -21,7 +21,7 @@
 
 > This project is in **alpha testing**. Compatibility is limited to the devices, system builds and scenarios covered by validation.
 
-Development is preparing **alpha9 / Manager 0.1.12** with shared KernelSU, Magisk and APatch installation/service scripts and an **eBPF-only** policy. Only KernelSU has device validation; Magisk/APatch currently have isolated script tests, not device certification. The published release remains alpha8. See the [device adapter contract](android/docs/DEVICE-ADAPTER.md).
+The current release is **alpha9 / Manager 0.1.16** with shared KernelSU, Magisk and APatch installation/service scripts and an **eBPF-only** policy. Only KernelSU has device validation; Magisk/APatch currently have isolated script tests, not device certification. It includes glass navigation icons, SmartLink, four home metrics and Chinese/English language options. See the [device adapter contract](android/docs/DEVICE-ADAPTER.md).
 
 ## Overview
 
@@ -56,13 +56,13 @@ Tap the image to open the full-resolution version. Use pinch-to-zoom on mobile.
 | Item | Current scope |
 | --- | --- |
 | Architecture | ARM64; not packaged for x86 or 32-bit ARM. |
-| Root manager | KernelSU with module management, WebUI and its BusyBox; other managers are unverified. |
-| Kernel capabilities | Compatible eBPF/TC, BTF, veth and network namespace support. Vendor restrictions can affect operation. |
+| Root manager | KernelSU is device-tested. Magisk/APatch share installer and service interfaces but still need device validation. |
+| Kernel capabilities | Kernel 5.17+ with compatible eBPF/TC, BTF, veth and network namespaces. Passing the version check does not replace load, attach and traffic validation. |
 | Verified device | OnePlus 13 / PJZ110, Android 17 / SDK 37. |
 | Verified kernel | `6.6.118-android15` AGKI, SELinux Enforcing. |
-| Current release | Package `v0.1.0-alpha8`, Manager `0.1.7`; retains the alpha7 core `3.1.0-android-ksu.6`. |
+| Current release | Package `v0.1.0-alpha9`, Manager `0.1.16`; retains the alpha7 core `3.1.0-android-ksu.6`. |
 
-alpha8 packages Manager 0.1.2–0.1.7: native resource pages, light/dark themes, glass-goose animation and the cartoon-goose icon. Device checks cover all six resource entrances, temporary DNS/routing edits and validation, configuration/group edits, runtime animation and icon masks; see the validation log for the precise write scope. Core and module control logic retain alpha7 behavior. Wi-Fi/5G traffic and cold boot were not retested for this UI release.
+alpha9 packages Manager 0.1.16 with four visible home metrics, SmartLink policies, a native runtime overview, glass navigation icons and system/Chinese/English language options. Module scripts share Root manager interfaces; the core remains 3.1.0-android-ksu.6 and uses eBPF only. OnePlus 13 checks cover service scripts, Wi-Fi/cellular transitions, app-UID HTTPS 204, language switching and native pages. Magisk/APatch have isolated script tests only. Cold boot and a full ZIP installation were not repeated; see the validation log.
 
 Vendor restrictions prevent cgroup attachment on the verified device, so avoid `pname()` process-name routing. Validation does not cover every UDP/QUIC or IPv6 scenario, other devices, Play Store installation flows or purchases. See [validation details](android/docs/VALIDATION.md).
 
@@ -72,9 +72,9 @@ Vendor restrictions prevent cgroup attachment on the verified device, so avoid `
 
 Download the ARM64 ZIP from the [latest release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest), install it through KernelSU, then reboot.
 
-Current release asset: [`DaedNext-KernelSU-v0.1.0-alpha8-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha8/DaedNext-KernelSU-v0.1.0-alpha8-arm64.zip). Releases provide two assets: the module ZIP and a standalone APK.
+Current release asset: [`DaedNext-KernelSU-v0.1.0-alpha9-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha9/DaedNext-KernelSU-v0.1.0-alpha9-arm64.zip). Releases provide two assets: the module ZIP and a standalone APK.
 
-Standalone app: [DaedNext-Manager-v0.1.7.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha8/DaedNext-Manager-v0.1.7.apk). The same ZIP also includes `manager/DaedNext-Manager.apk`. Extract and install it, grant **DaedNext** superuser access in KernelSU, then open the app. Existing accounts, nodes, subscriptions and Wi-Fi policies are retained. The module does not install the app automatically. See the [Android manager guide](android/manager/README.md).
+Standalone app: [DaedNext-Manager-v0.1.16.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha9/DaedNext-Manager-v0.1.16.apk). The same ZIP also includes `manager/DaedNext-Manager.apk`. Extract and install it, grant **DaedNext** superuser access in KernelSU, then open the app. Existing accounts, nodes, subscriptions and Wi-Fi policies are retained. The module does not install the app automatically. See the [Android manager guide](android/manager/README.md).
 
 Stop other transparent proxy cores or VPNs before installation. The module checks for conflicting processes, but that check does not cover every possible competing proxy.
 

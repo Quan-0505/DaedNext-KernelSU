@@ -2,7 +2,7 @@
 
 原生 Android 管理器，与 DaedNext KernelSU 模块共同工作。交互分工参考 [NetProxy Android Manager](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)，客户端与模块接口独立实现，未复制其 UI 或业务源码。
 
-当前源码版本 **0.1.16**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha8 ZIP 内包含 Manager 0.1.7；历史 alpha7 ZIP 内为 Manager 0.1.1。
+当前源码版本 **0.1.16**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha9 ZIP 内包含 Manager 0.1.16；历史 alpha8 ZIP 内为 Manager 0.1.7。
 
 ## 安装
 
@@ -76,7 +76,7 @@ python android/manager/build.py --unsigned
 
 首次导入节点后须建立节点、群组、路由关联，操作见 [首次代理配置](../docs/FIRST-PROXY.md)。
 
-开发版 alpha9 统一 KernelSU／Magisk／APatch 安装和服务脚本，仅允许 eBPF；目前实机验证仍限 KernelSU。其他管理器的隔离脚本检查不等于真机兼容认证，见 [适配说明](../docs/DEVICE-ADAPTER.md)。
+alpha9 统一 KernelSU／Magisk／APatch 安装和服务脚本，仅允许 eBPF；目前实机验证仍限 KernelSU。其他管理器的隔离脚本检查不等于真机兼容认证，见 [适配说明](../docs/DEVICE-ADAPTER.md)。
 
 首页先显示 CPU／内存，再显示下载／上传速度。底部“查看运行概况”进入独立原生页面，按状态、服务资源和代理流量分区展示，包含最近采样时间与累计流量；支持明暗主题、手动刷新和前台每 6 秒原位更新，返回首页保留导航归属。
 
