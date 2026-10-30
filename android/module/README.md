@@ -13,9 +13,11 @@ ARM64 Android 上的 DaeNext 原生透明代理模块，提供 KernelSU WebUI、
 
 模块不会携带测试账户或任何订阅。现有 NetProxy 等透明代理核心必须先停止，模块会拒绝与正在运行的同类核心同时接管网络。
 
-## Android App（alpha7）
+## Android App
 
-ZIP 内的 `manager/DaedNext-Manager.apk` 是配套原生管理器，需手动安装并在 KernelSU 超级用户列表中授予 Root 权限。App 直接管理现有模块，不导入或重置账户、节点、订阅和 Wi-Fi 名单。提供仪表盘、节点、订阅、网络、设置五个页面，高级策略组、DNS 和路由在内嵌管理面板中操作。
+ZIP 内的 `manager/DaedNext-Manager.apk` 是配套原生管理器，需手动安装并在当前 Root 管理器中授予 Root 权限。App 直接管理现有模块，不导入或重置账户、节点、订阅和 Wi-Fi 名单。开发版提供首页／资源／网络／设置四项导航，配置、DNS、路由、群组、节点和订阅均有原生资源页面。
+
+alpha9 开发版统一三种 Root 管理器的安装与服务接口，并固定仅用 eBPF；Magisk、APatch 尚缺真机验收，不应视作已验证支持。详情见 [设备适配接口](../docs/DEVICE-ADAPTER.md)。
 
 App 的代理开关控制内核启用意图；设置中的服务开关控制整个后台服务。短期会话签发仅允许本地 Root socket 调用，不向 HTTP 开放。模块不会自动安装或替换手机上的 App。
 

@@ -2,7 +2,7 @@
 # Opt-in ColorOS compatibility. Only the two named Google package UIDs are managed.
 MODDIR=${MODDIR:-${0%/scripts/*}}
 export MODDIR
-. "$MODDIR/scripts/common.sh"
+. "$MODDIR/scripts/common.sh" || exit 1
 FLAG="$STATE/google-network-enabled"
 JOURNAL="$STATE/google-network-original"
 ABI_CACHE="$RUN/google-network-abi"

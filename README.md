@@ -21,6 +21,8 @@
 
 > 当前版本处于 **alpha 测试阶段**。兼容性以已验证的设备、系统和实测范围为准。
 
+开发分支正在准备 **alpha9 / Manager 0.1.12**：统一 KernelSU、Magisk、APatch 的安装与服务接口，仅允许 eBPF；目前仅 KernelSU 完成真机验证，Magisk／APatch 通过隔离脚本测试，尚不代表其他设备已兼容。现有 Release 仍为 alpha8。见 [跨设备适配说明](android/docs/DEVICE-ADAPTER.md)。
+
 ## 项目简介
 
 DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust 原生透明代理核心集成到 KernelSU 模块中，并提供 [DaedNext](https://github.com/ksong008/DaedNext) 管理面板和独立的模块 WebUI。

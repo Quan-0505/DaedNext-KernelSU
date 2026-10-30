@@ -1,7 +1,7 @@
 #!/system/bin/sh
 MODDIR=${MODDIR:-${0%/scripts/*}}
 export MODDIR
-. "$MODDIR/scripts/common.sh"
+. "$MODDIR/scripts/common.sh" || exit 1
 init_state || exit 1
 LOCK="$STATE/manage.lock"
 locked=0

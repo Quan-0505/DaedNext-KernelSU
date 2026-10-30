@@ -61,7 +61,7 @@ public final class MainActivity extends Activity {
         LinearLayout brandRow=row();
         TextView brand = text("DaedNext", 22, ink); brand.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         brandRow.addView(brand,new LinearLayout.LayoutParams(0,-2,1));
-        badge=text("KernelSU",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
+        badge=text("Root",10,muted);badge.setPadding(dp(10),dp(5),dp(10),dp(5));badge.setBackground(shape(card,20));brandRow.addView(badge);header.addView(brandRow);
         badge.setOnClickListener(v->{if(page>=5||page==1||page==2)onBackPressed();});
         pageTitle = text("你的连接", 31, ink); pageTitle.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));
         LinearLayout.LayoutParams titleParams=new LinearLayout.LayoutParams(-1,-2);titleParams.topMargin=dp(15);header.addView(pageTitle,titleParams);
@@ -141,7 +141,7 @@ public final class MainActivity extends Activity {
     }
     private void showPage(int target) {
         page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?"你的连接":pages[page]); buildNav(); wifiDraft=false;
-        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1||page==2?"‹ 返回":"KernelSU");
+        detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1||page==2?"‹ 返回":"Root");
         if (page==0) dashboard();
         else if (page==1) loadNodes();
         else if (page==2) loadSubscriptions();
@@ -456,7 +456,7 @@ public final class MainActivity extends Activity {
         }));
         button(tools,"查看运行日志",false,()->task("正在读取日志…",()->module.command("logs"),value->textDialog("运行日志 · 仅在本机显示",value)));
         button(tools,"高级管理面板",false,()->panel("/"));
-        hint(card("DaedNext Manager · 0.1.11"),"需要 KernelSU Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
+        hint(card("DaedNext Manager · 0.1.12"),"需要 Root 授权和 alpha7+ 模块。界面视觉参考 Opal，管理交互参考 NetProxy；保留你的账户与配置，不上传设备数据。");
     }
     // Native configuration workspace. Saving never implicitly reloads the runtime.
     private void loadConfigs() {

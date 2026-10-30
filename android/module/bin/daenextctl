@@ -1,10 +1,11 @@
 #!/system/bin/sh
 MODDIR=$(CDPATH= cd -- "${0%/*}/.." && pwd)
 export MODDIR
-. "$MODDIR/scripts/common.sh"
+. "$MODDIR/scripts/common.sh" || exit 1
 [ "$(id -u)" = 0 ] || { echo 'Root is required.' >&2; exit 1; }
 case "${1:-status}" in
  capabilities) exec /system/bin/sh "$MODDIR/scripts/device-capabilities.sh" ;;
+ config-check) exec "$DAEMON" validate -c "$CONFIG" --runtime --json ;;
  manager-session) exec "$DAEMON" manager-session --control "$RUN/control.sock" ;;
  wifi-policy)
   case "${2:-get}" in
@@ -40,5 +41,5 @@ case "${1:-status}" in
   "$0" logs
   ;;
  start|stop|restart|reload|backup|autostart|google-network) exec /system/bin/sh "$MODDIR/scripts/manage.sh" "$@" ;;
- *) echo 'Usage: daenextctl {start|stop|restart|reload|status|capabilities|logs|diagnose|backup|autostart on|off|google-network on|off|wifi-policy get|set BASE64_JSON}' >&2; exit 2 ;;
+ *) echo 'Usage: daenextctl {start|stop|restart|reload|status|capabilities|config-check|logs|diagnose|backup|autostart on|off|google-network on|off|wifi-policy get|set BASE64_JSON}' >&2; exit 2 ;;
 esac

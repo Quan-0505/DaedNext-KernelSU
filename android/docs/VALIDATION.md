@@ -1,5 +1,13 @@
 # Android 实测记录
 
+## alpha9 开发版：Root 接口与 eBPF-only — 2026-10-30
+
+- 三种管理器的隔离安装矩阵、APatch/Magisk 变量重叠、管理器身份持久化、缺少 BusyBox、恶意标识与环境约束通过测试，并纳入 CI。Magisk ZIP 引导及执行权限纳入打包检查；未在 Magisk／APatch 真机安装。
+- 一加 13 / KernelSU 3.3.1 先备份持久数据与原模块脚本，再更新脚本，验证 capabilities、只读 config-check、停止和启动。App 0.1.12 使用原签名覆盖安装。
+- 临时关闭 Wi-Fi，蜂窝网络上的 runtimeRunning 恢复；runtime.startupEvidence 记录 TCX 绑定和后置检查。由同签名 instrumentation 在 App UID 下通过 HTTPS 访问 YouTube 和 Google，均返回 HTTP 204，未使用显式 HTTP 代理。
+- 恢复 1503 Wi-Fi 黑名单自动直连，保留启用意图。生成配置仅忽略 generated_at 导出时间戳后逐字节一致，未重置节点、订阅或用户规则；临时测试 APK 清理。
+- 此轮未重启手机，也未验证传统 TC 回退、其他机型、IPv6／UDP 全场景或其他 Root 管理器的真实权限。核心未修改，未发布 alpha9；Release 保持 alpha8。
+
 ## 跨设备能力报告 v1 — 2026-10-30
 
 - 将只读探测脚本临时推送一加 13 并通过 Root 执行，验证输出可解析为 JSON，schemaVersion、UID、ABI 及未验证状态符合契约；临时脚本随后删除。

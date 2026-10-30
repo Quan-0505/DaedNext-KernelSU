@@ -23,8 +23,10 @@ jobs:
       - name: Check Python, shell and WebUI syntax
         run: |
           python3 -m py_compile android/tools/*.py
+          python3 android/tests/root-env.test.py
           find android -name '*.sh' -print0 | xargs -0 -n1 bash -n
           bash -n android/module/bin/daenextctl
+          bash -n android/module/META-INF/com/google/android/update-binary
           node --check android/module/webroot/app.js
           node android/tests/webui-wifi.test.mjs
           git diff --check

@@ -9,7 +9,7 @@ git clone https://github.com/Quan-0505/DaedNext-KernelSU.git
 cd DaedNext-KernelSU
 python android/tools/fetch-runtime.py
 python android/manager/build.py
-python -c "import shutil; shutil.copyfile('android/dist/DaedNext-Manager-v0.1.7.apk', 'android/module/manager/DaedNext-Manager.apk')"
+python -c "import shutil; shutil.copyfile('android/dist/DaedNext-Manager-v0.1.12.apk', 'android/module/manager/DaedNext-Manager.apk')"
 python android/tools/seed-defaults.py
 python android/tools/package.py
 ```

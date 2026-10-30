@@ -1,5 +1,5 @@
 #!/system/bin/sh
-BB=/data/adb/ksu/bin/busybox
+. "$MODDIR/scripts/root-env.sh" || return 1
 STATE=${DAENEXT_STATE_DIR:-/data/adb/daenext}
 CONFIG="$STATE/config"
 RUN="$STATE/run"
@@ -10,6 +10,10 @@ export DAE_RUNTIME_DIR="$RUN"
 export DAE_NETWORK_POLICY_STATE="$RUN/wifi-policy-state.json"
 export DAE_ALLOW_EMPTY_LAN=1
 export NETNS_LINK=veth
+# Only native eBPF is admitted. Auto selects an eBPF attach mechanism, never TUN.
+export RESIDENT_NATIVE_EBPF=1
+export RESIDENT_DATAPLANE=1
+export RESIDENT_NATIVE_EBPF_BACKEND=auto
 export SSL_CERT_FILE="$STATE/certs/ca-certificates.crt"
 export PATH="$MODDIR/bin:/system/bin:/system/xbin:/vendor/bin"
 if [ -d /sys/fs/cgroup/apps ]; then

@@ -21,6 +21,8 @@
 
 > This project is in **alpha testing**. Compatibility is limited to the devices, system builds and scenarios covered by validation.
 
+Development is preparing **alpha9 / Manager 0.1.12** with shared KernelSU, Magisk and APatch installation/service scripts and an **eBPF-only** policy. Only KernelSU has device validation; Magisk/APatch currently have isolated script tests, not device certification. The published release remains alpha8. See the [device adapter contract](android/docs/DEVICE-ADAPTER.md).
+
 ## Overview
 
 DaedNext-KernelSU integrates the native Rust [DaeNext](https://github.com/ksong008/DaeNext) transparent proxy core into a KernelSU module, with the [DaedNext](https://github.com/ksong008/DaedNext) dashboard and a separate module WebUI.

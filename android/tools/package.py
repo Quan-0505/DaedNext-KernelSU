@@ -7,6 +7,8 @@ out=root/'dist'
 out.mkdir(exist_ok=True)
 required=['module.prop','service.sh','action.sh','customize.sh','uninstall.sh','skip_mount','bin/daed','bin/daenextctl','lib/libc++_shared.so','defaults/daed.db','defaults/wifi-policy.json','manager/DaedNext-Manager.apk','webroot/index.html','panel/index.html','assets/geoip.dat','assets/geosite.dat']
 assert all((module/f).is_file() for f in required)
+assert not (module/'root-manager').exists(), 'Installer identity must not be baked into a release'
+assert all((module/f).is_file() for f in ('scripts/root-env.sh', 'META-INF/com/google/android/update-binary', 'META-INF/com/google/android/updater-script'))
 db=sqlite3.connect(f'file:{module / "defaults/daed.db"}?mode=ro',uri=True)
 for table in ('users','nodes','subscriptions'):
  assert db.execute('select count(*) from '+table).fetchone()[0]==0,table
@@ -27,7 +29,9 @@ info={
 for path in module.rglob('*'):
  if path.is_file() and (path.suffix in ('.sh','.prop','.js','.css','.html') or path.name=='daenextctl'):
   assert b'\r\n' not in path.read_bytes(),str(path)
-manifest={str(p.relative_to(module)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(module.rglob('*')) if p.is_file() and p.name!='SHA256SUMS'}
+# Magisk does not extract META-INF into MODPATH. Check all installed payload files;
+# the bootstrap remains in the ZIP, covered by the release digest and ZIP CRC.
+manifest={str(p.relative_to(module)).replace('\\','/'):hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(module.rglob('*')) if p.is_file() and p.name!='SHA256SUMS' and not p.relative_to(module).as_posix().startswith('META-INF/')}
 (module/'SHA256SUMS').write_text(''.join(f'{sha}  {name}\n' for name,sha in manifest.items()),encoding='utf8',newline='\n')
 properties=dict(line.split('=',1) for line in (module/'module.prop').read_text(encoding='utf8').splitlines() if '=' in line)
 version=properties['version']
@@ -38,7 +42,7 @@ with zipfile.ZipFile(dest,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=6) 
   if not p.is_file():continue
   name=p.relative_to(module).as_posix()
   info=zipfile.ZipInfo(name,(2026,10,25,12,0,0))
-  executable=p.suffix=='.sh' or name.startswith('bin/')
+  executable=p.suffix=='.sh' or name.startswith('bin/') or name=='META-INF/com/google/android/update-binary'
   info.create_system=3
   info.external_attr=(stat.S_IFREG|(0o755 if executable else 0o644))<<16
   info.compress_type=zipfile.ZIP_DEFLATED

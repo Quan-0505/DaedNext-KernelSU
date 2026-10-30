@@ -20,7 +20,7 @@ final class ModuleClient {
             throw new IOException("不支持的模块操作");
         Process process;
         try { process = new ProcessBuilder("su", "-c", CTL + " " + action).start(); }
-        catch (IOException error) { throw new IOException("无法访问 su，请在 KernelSU 中授予 DaedNext Root 权限，然后重新打开 App"); }
+        catch (IOException error) { throw new IOException("无法访问 su，请在当前 Root 管理器中授予 DaedNext Root 权限，然后重新打开 App"); }
         Future<String> out = READERS.submit(() -> read(process.getInputStream()));
         Future<String> err = READERS.submit(() -> read(process.getErrorStream()));
         try {
@@ -32,9 +32,9 @@ final class ModuleClient {
             String stderr = err.get(3, TimeUnit.SECONDS).trim();
             if (process.exitValue() != 0) {
                 if (stderr.contains("Permission denied") || stderr.contains("not allowed") || stderr.contains("denied"))
-                    throw new IOException("需要 Root 授权：请在 KernelSU 中允许 DaedNext 使用超级用户权限");
+                    throw new IOException("需要 Root 授权：请在当前 Root 管理器中允许 DaedNext 使用超级用户权限");
                 if (stderr.contains("not found") || stderr.contains("No such file"))
-                    throw new IOException("未找到兼容模块，请先安装 DaedNext KernelSU alpha7 或更新版本");
+                    throw new IOException("未找到兼容模块，请先安装 DaedNext alpha7 或更新版本");
                 throw new IOException(stderr.isEmpty() ? "模块操作失败，请检查 Root 授权与模块安装状态" : stderr);
             }
             return stdout;

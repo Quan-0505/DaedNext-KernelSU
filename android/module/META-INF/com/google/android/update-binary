@@ -1,0 +1,12 @@
+#!/sbin/sh
+# Magisk Manager entry point; KernelSU/APatch use their native module installer.
+umask 022
+OUTFD=$2
+ZIPFILE=$3
+export OUTFD ZIPFILE
+ui_print() { echo "$1"; }
+[ -f /data/adb/magisk/util_functions.sh ] || { ui_print 'Install with Magisk Manager 20.4+.'; exit 1; }
+. /data/adb/magisk/util_functions.sh
+case "${MAGISK_VER_CODE:-}" in ''|*[!0-9]*) ui_print 'Invalid Magisk version.'; exit 1 ;; esac
+[ "$MAGISK_VER_CODE" -ge 20400 ] || { ui_print 'Magisk 20.4+ is required.'; exit 1; }
+install_module

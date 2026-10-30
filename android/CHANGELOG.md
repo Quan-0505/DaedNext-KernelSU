@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.0-alpha9 / Manager 0.1.12 — 开发中，尚未发布
+
+- 统一 KernelSU、Magisk、APatch 的 BusyBox、安装标识和服务入口，补齐 Magisk ZIP 安装引导；只有 KernelSU 请求热安装。
+- 强制原生 eBPF 与数据面准入，使用核心现有 auto 挂载逻辑选择 TCX／传统 TC eBPF；不提供非 eBPF 回退。
+- 新增只读 config-check，能力报告增加管理器身份及 eBPF-only 策略；路径可见性仍不视作运行验证。
+- App 使用通用 Root 授权提示；集成 Manager 0.1.8–0.1.11 的首页、设置精简、CPU／内存卡片与首次配置指引。
+- 安装矩阵和失败场景纳入 CI；一加 13 KernelSU 完成脚本启停、蜂窝 eBPF 准入与应用 UID 的 HTTPS 测试。Magisk／APatch 真机及冷启动尚未验证。
+
 ## 模块开发中 — 设备能力接口
 
 - 新增只读 `daenextctl capabilities` JSON v1，报告基础 Android／内核环境与能力路径可见性。

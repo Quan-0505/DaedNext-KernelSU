@@ -1,6 +1,6 @@
 id=daenext
 name=DaeNext
-version=v0.1.0-alpha8
-versionCode=10008
+version=v0.1.0-alpha9
+versionCode=10009
 author=ksong008 / Android integration
 description=Rust native transparent proxy for ARM64 Android. Includes local dashboard, service control and persistent configuration.
