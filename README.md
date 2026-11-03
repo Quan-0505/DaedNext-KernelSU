@@ -21,7 +21,7 @@
 
 > 当前版本处于 **alpha 测试阶段**。兼容性以已验证的设备、系统和实测范围为准。
 
-当前版本 **alpha9 / Manager 0.1.16**：统一 KernelSU、Magisk、APatch 的安装与服务接口，仅允许 eBPF；目前仅 KernelSU 完成真机验证，Magisk／APatch 通过隔离脚本测试，尚不代表其他设备已兼容。包含梦幻琉璃导航、智联、首页四项指标与中英文切换。见 [跨设备适配说明](android/docs/DEVICE-ADAPTER.md)。
+当前版本 **alpha10 / Manager 0.1.17**：统一 KernelSU、Magisk、APatch 的安装与服务接口，仅允许 eBPF；目前仅 KernelSU 完成真机验证，Magisk／APatch 通过隔离脚本测试，尚不代表其他设备已兼容。本版修复测速时首页指标刷新与过期速率显示，改为每秒接收核心采样；保留梦幻琉璃导航、智联与中英文切换。见 [跨设备适配说明](android/docs/DEVICE-ADAPTER.md)。
 
 ## 项目简介
 
@@ -60,9 +60,9 @@ DaedNext-KernelSU 将 [DaeNext](https://github.com/ksong008/DaeNext) 的 Rust �
 | 内核能力 | 当前要求内核 5.17+，并具备兼容的 eBPF/TC、BTF、veth 与网络命名空间能力；版本达标仍须通过实际加载、挂载及流量验证。 |
 | 已验证设备 | 一加 13 / PJZ110，Android 17 / SDK 37。 |
 | 已验证内核 | `6.6.118-android15` AGKI，SELinux Enforcing。 |
-| 当前发布版本 | 安装包 `v0.1.0-alpha9`，Manager `0.1.16`；沿用 alpha7 核心 `3.1.0-android-ksu.6`。 |
+| 当前发布版本 | 安装包 `v0.1.0-alpha10`，Manager `0.1.17`；沿用 alpha7 核心 `3.1.0-android-ksu.6`。 |
 
-alpha9 集成 Manager 0.1.16：四项首页指标完整展示、智联策略、独立运行概况、梦幻琉璃导航和跟随系统／中文／English。模块统一三种 Root 管理器的脚本接口，核心保持 3.1.0-android-ksu.6，仅允许 eBPF。验证覆盖一加 13 脚本启停、Wi-Fi／蜂窝切换、App UID 的 HTTPS 204、中英文切换及原生页面；Magisk／APatch 仅通过隔离脚本测试，本轮未重测冷启动或完整 ZIP 安装。详见实测记录。
+alpha10 集成 Manager 0.1.17：修复首页与运行概况的指标刷新，订阅每秒核心采样，停止显示过期速率，长数字自适应卡片宽度。流量仅含代理转发，直连测速不计入；CPU 单核满载为 100%，多核可超过 100%。一加 13 的 5G Ookla 测速由用户复测确认正常。模块统一三种 Root 管理器的脚本接口，核心保持 3.1.0-android-ksu.6，仅允许 eBPF。验证覆盖一加 13 脚本启停、Wi-Fi／蜂窝切换、App UID 的 HTTPS 204、中英文切换及原生页面；Magisk／APatch 仅通过隔离脚本测试，本轮未重测冷启动或完整 ZIP 安装。详见实测记录。
 
 当前设备的 cgroup attach 受到厂商内核限制，配置应避免 `pname()` 进程名路由。全部 UDP/QUIC、IPv6 场景、其他机型、Play 应用安装与付费购买不在本轮验收结论内。具体条件和证据摘要见 [实测记录](android/docs/VALIDATION.md)。
 
@@ -72,9 +72,9 @@ alpha9 集成 Manager 0.1.16：四项首页指标完整展示、智联策略、�
 
 从 [Latest Release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest) 下载 ARM64 ZIP，在 KernelSU 管理器中选择本地安装，完成后重启。
 
-当前发布安装包：[`DaedNext-KernelSU-v0.1.0-alpha9-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha9/DaedNext-KernelSU-v0.1.0-alpha9-arm64.zip)。Release 提供模块 ZIP 与独立 APK 两个附件。
+当前发布安装包：[`DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha10/DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip)。Release 提供模块 ZIP 与独立 APK 两个附件。
 
-独立 App：[DaedNext-Manager-v0.1.16.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha9/DaedNext-Manager-v0.1.16.apk)。同一个 ZIP 内也包含 `manager/DaedNext-Manager.apk`。解压安装后，在 **KernelSU → 超级用户** 中允许 **DaedNext**，即可通过 App 管理现有模块。原有账户、节点、订阅和 Wi-Fi 名单直接保留；App 不会自动安装。详见 [Android 管理器说明](android/manager/README.md)。
+独立 App：[DaedNext-Manager-v0.1.17.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha10/DaedNext-Manager-v0.1.17.apk)。同一个 ZIP 内也包含 `manager/DaedNext-Manager.apk`。解压安装后，在 **KernelSU → 超级用户** 中允许 **DaedNext**，即可通过 App 管理现有模块。原有账户、节点、订阅和 Wi-Fi 名单直接保留；App 不会自动安装。详见 [Android 管理器说明](android/manager/README.md)。
 
 安装前停止其他透明代理核心或 VPN，避免重复接管流量。模块包含冲突检测，但不能代替对其他代理状态的检查。
 
