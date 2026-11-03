@@ -31,6 +31,8 @@ public final class MainActivity extends Activity {
     private boolean proxySwitchPending,proxySwitchTarget;
     private AlertDialog formDialog;
     private JSONObject status, wifiConfig, metrics;
+    private RuntimeMetricsFeed metricsFeed;
+    private long metricsReceivedAt, lastStatusRead;
     private String mode = "blacklist";
     private EditText wifiNames;
     private Switch wifiEnabled, cellular;
@@ -48,13 +50,23 @@ public final class MainActivity extends Activity {
     private static final String[] RESOURCE_NAMES={"配置","DNS","路由","群组","节点","订阅"};
     private static final String[] RESOURCE_HINTS={"运行参数与探测","上游解析与查询分流","规则顺序与流量出口","候选节点与优选策略","独立与订阅节点","订阅来源与自动更新"};
     private final Runnable ticker = new Runnable() { public void run() {
-        if (foreground) { refreshStatus(false); main.postDelayed(this, 6000); }
+        if (foreground) {
+            long now=SystemClock.elapsedRealtime();
+            if(now-lastStatusRead>=6000){lastStatusRead=now;refreshStatus(false);}
+            if(metrics!=null&&!freshMetrics()){metrics=null;if(page==0)updateDashboard();else if(page==10)updateMetricsPage();}
+            main.postDelayed(this, 1000);
+        }
     }};
 
     @Override protected void attachBaseContext(Context base){super.attachBaseContext(L10n.attach(base));}
     @Override public void onCreate(Bundle saved) {
         appearance=new Appearance(this); appearance.apply(this);
         super.onCreate(saved);
+        metricsFeed=new RuntimeMetricsFeed(api,sample->{final long received=SystemClock.elapsedRealtime();main.post(()->{
+            if(!foreground||isDestroyed()||(page!=0&&page!=10))return;
+            metrics=sample;metricsReceivedAt=received;
+            if(!busy&&!proxySwitchPending){if(page==0)updateDashboard();else updateMetricsPage();}
+        });});
         ink=appearance.ink; muted=appearance.muted; background=appearance.background;
         card=appearance.card; border=appearance.border; accent=appearance.accent;
         appearance.bars(this);
@@ -88,9 +100,17 @@ public final class MainActivity extends Activity {
         if(page>=5){showPage(returnPage);return;}
         super.onBackPressed();
     }
-    @Override protected void onResume() { super.onResume(); foreground = true; main.removeCallbacks(ticker); main.post(ticker); }
-    @Override protected void onPause() { foreground = false; main.removeCallbacks(ticker);if(connectionArt!=null)connectionArt.stopMotion(); super.onPause(); }
-    @Override protected void onDestroy() { main.removeCallbacksAndMessages(null); worker.shutdownNow(); api.clear(); super.onDestroy(); }
+    @Override protected void onResume() { super.onResume(); foreground = true;lastStatusRead=SystemClock.elapsedRealtime();refreshStatus(false);syncMetricsFeed();main.removeCallbacks(ticker); main.post(ticker); }
+    @Override protected void onPause() { foreground = false;metricsFeed.stop();metrics=null;main.removeCallbacks(ticker);if(connectionArt!=null)connectionArt.stopMotion(); super.onPause(); }
+    @Override protected void onDestroy() { metricsFeed.close();main.removeCallbacksAndMessages(null); worker.shutdownNow(); api.clear(); super.onDestroy(); }
+    private void syncMetricsFeed(){if(metricsFeed==null)return;if(foreground&&(page==0||page==10))metricsFeed.start();else{metricsFeed.stop();metrics=null;}}
+    private boolean freshMetrics(){
+        if(metrics==null||SystemClock.elapsedRealtime()-metricsReceivedAt>5000)return false;
+        try{long age=System.currentTimeMillis()-java.time.OffsetDateTime.parse(metrics.optString("updatedAt")).toInstant().toEpochMilli();return age>=-2000&&age<=5000;}
+        catch(Exception invalid){return false;}
+    }
+    private boolean liveTraffic(){return freshMetrics()&&!ready().optBoolean("networkPolicyPaused")&&metrics.optBoolean("trafficAvailable");}
+    private String rate(String key){String value=liveTraffic()?bytes(metrics.optDouble(key)):"—";return value.equals("—")?value:value+"/s";}
 
     private int dp(float n) { return (int)(n * getResources().getDisplayMetrics().density + .5f); }
     private LinearLayout column() { LinearLayout v = new LinearLayout(this); v.setOrientation(1); return v; }
@@ -143,6 +163,7 @@ public final class MainActivity extends Activity {
     }
     private void showPage(int target) {
         page=target; generation++; actions.clear(); content.removeAllViews(); pageTitle.setText(page==0?L10n.tr("你的连接"):L10n.tr(pages[page])); buildNav(); wifiDraft=false;
+        syncMetricsFeed();
         detailGroupId=0;detailSection=null;detailKind=null;badge.setText(page>=5||page==1||page==2?L10n.tr("‹ 返回"):"Root");
         if (page==0) dashboard();
         else if (page==1) loadNodes();
@@ -191,15 +212,14 @@ public final class MainActivity extends Activity {
     private void refreshStatus(boolean force) {
         if(busy || reading)return; reading=true; final int epoch=generation,selectedPage=page;
         worker.execute(()->{
-            JSONObject value=null,sample=null;Exception failure=null;
+            JSONObject value=null;Exception failure=null;
             try { value=module.status(); } catch(Exception e){failure=e;}
-            if(value!=null && !value.isNull("pid") && (selectedPage==0||selectedPage==10))try{sample=api.get("runtime/overview");}catch(Exception ignored){}
-            JSONObject result=value,statistics=sample; Exception problem=failure;
+            JSONObject result=value; Exception problem=failure;
             main.post(()->{reading=false;if(isFinishing()||isDestroyed())return;
                 if(proxySwitchPending)return;
                 if(problem!=null){ if(page==10&&epoch==generation){metrics=null;updateMetricsPage();}notice.setText(problem.getMessage()); notice.setTextColor(appearance.danger); if(force)error(problem); return; }
                 boolean firstStatus=status==null;
-                status=result;if(selectedPage==0||selectedPage==10)metrics=statistics;
+                status=result;
                 notice.setText(serviceOn()?L10n.tr("本机服务已连接"):L10n.tr("后台服务未启动"));notice.setTextColor(muted);
                 if(page==0 && epoch==generation && !busy)updateDashboard();
                 else if(page==10 && epoch==generation && !busy)updateMetricsPage();
@@ -270,11 +290,11 @@ public final class MainActivity extends Activity {
         proxyToggle.setText(proxySwitchPending?L10n.tr("正在切换…"):wanted?L10n.tr("暂停代理"):L10n.tr("启用代理"));proxyToggle.setEnabled(!busy&&!proxySwitchPending&&!connectionArt.isAnimating()&&status!=null);
         String iface=status==null?"":status.optString("interface");networkName.setText(w!=null&&!w.isNull("ssid")?w.optString("ssid"):iface.startsWith("wlan")?"Wi-Fi":iface.startsWith("rmnet")?L10n.tr("移动数据"):L10n.tr("当前网络"));
         networkPolicy.setText(w==null?L10n.tr("等待网络策略"):w.optBoolean("enabled")?(w.optString("mode").equals("blacklist")?L10n.tr("黑名单"):L10n.tr("白名单"))+" · "+(w.optBoolean("direct")?L10n.tr("手机直连"):L10n.tr("使用代理")):L10n.tr("按现有规则连接"));
-        downloadValue.setText(metrics==null?"—":bytes(metrics.optDouble("downloadRate"))+"/s");uploadValue.setText(metrics==null?"—":bytes(metrics.optDouble("uploadRate"))+"/s");
-        double cpu=metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent");
+        downloadValue.setText(rate("downloadRate"));uploadValue.setText(rate("uploadRate"));
+        double cpu=freshMetrics()?metrics.optDouble("cpuUsagePercent"):Double.NaN;
         cpuValue.setText(Double.isNaN(cpu)||Double.isInfinite(cpu)||cpu<0?"—":String.format(Locale.ROOT,"%.1f%%",cpu));
-        memoryValue.setText(metrics==null?"—":bytes(metrics.optDouble("rssBytes")));
-        trafficScope.setText(bypass&&wanted?L10n.tr("仅统计本机服务；直连 Wi-Fi 的上游流量不计入。"):L10n.tr("仅统计 DaedNext 服务及其转发流量。"));
+        memoryValue.setText(freshMetrics()?bytes(metrics.optDouble("rssBytes")):"—");
+        trafficScope.setText(bypass&&wanted?L10n.tr("仅统计本机服务；直连 Wi-Fi 的上游流量不计入。"):L10n.tr("代理流量 · 不含直连测速；CPU 单核 100%。"));
     }
     private void toggleProxy(){
         if(busy||proxySwitchPending||connectionArt==null||connectionArt.isAnimating()||status==null)return;
@@ -293,7 +313,7 @@ public final class MainActivity extends Activity {
     private TextView metric(LinearLayout parent,String label,String value,int color,boolean first){
         LinearLayout box=column();box.setPadding(dp(17),dp(16),dp(12),dp(16));box.setBackground(shape(card,22));
         LinearLayout.LayoutParams params=new LinearLayout.LayoutParams(0,-2,1);if(first)params.rightMargin=dp(5);else params.leftMargin=dp(5);parent.addView(box,params);
-        box.addView(text(label,11,muted));TextView number=text(value,22,color);number.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));box.addView(number);return number;
+        box.addView(text(label,11,muted));TextView number=text(value,22,color);number.setTypeface(Typeface.create("sans-serif-medium",Typeface.NORMAL));number.setMaxLines(1);number.setAutoSizeTextTypeUniformWithConfiguration(12,22,1,android.util.TypedValue.COMPLEX_UNIT_SP);box.addView(number,new LinearLayout.LayoutParams(-1,dp(37)));return number;
     }
     private LinearLayout overviewRow(){
         LinearLayout line=row();LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,-2);p.bottomMargin=dp(10);content.addView(line,p);return line;
@@ -320,13 +340,13 @@ public final class MainActivity extends Activity {
         if(page!=10||overviewValues==null)return;
         JSONObject r=ready();boolean bypass=r.optBoolean("networkPolicyPaused")&&r.optBoolean("runtimeRequired");
         overviewState.setText(status==null?L10n.tr("等待连接"):!serviceOn()?L10n.tr("服务未启动"):bypass?L10n.tr("Wi-Fi 自动直连"):r.optBoolean("runtimeRunning")?L10n.tr("代理运行中"):r.optBoolean("runtimeRequired")?L10n.tr("正在恢复连接"):L10n.tr("代理已暂停"));
-        String sampled=metrics==null?"":metrics.optString("updatedAt","");
+        String sampled=freshMetrics()?metrics.optString("updatedAt",""):"";
         try{sampled=java.time.OffsetDateTime.parse(sampled).atZoneSameInstant(java.time.ZoneId.systemDefault()).format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss",Locale.getDefault()));}catch(Exception ignored){sampled="";}
         overviewSample.setText(sampled.isEmpty()?L10n.tr("暂未取得运行采样"):L10n.tr("最近采样 · ")+sampled);
-        overviewValues[0].setText(percent(metrics==null?Double.NaN:metrics.optDouble("cpuUsagePercent")));
+        overviewValues[0].setText(percent(freshMetrics()?metrics.optDouble("cpuUsagePercent"):Double.NaN));
         String[] keys={"rssBytes","downloadRate","uploadRate","downloadTotal","uploadTotal"};
-        for(int i=0;i<keys.length;i++){String value=bytes(metrics==null?Double.NaN:metrics.optDouble(keys[i]));overviewValues[i+1].setText(value.equals("—")?value:value+(i==1||i==2?"/s":""));}
-        overviewScope.setText(L10n.tr("CPU 与内存仅统计 DaedNext 服务，不含其他应用。\n\n")+(bypass?L10n.tr("当前 Wi-Fi 自动直连，上游代理流量不计入这里。"):L10n.tr("流量仅统计由手机代理转发的部分。"))+L10n.tr("\n\n数据暂不可用时显示 —；离开 App 后停止刷新。"));
+        for(int i=0;i<keys.length;i++){String value=bytes(freshMetrics()?metrics.optDouble(keys[i]):Double.NaN);overviewValues[i+1].setText(i==1||i==2?rate(keys[i]):value);}
+        overviewScope.setText(L10n.tr("CPU 与内存仅统计 DaedNext 服务，不含其他应用。\n\n")+L10n.tr("CPU 单核满载为 100%，多核并行可超过 100%。\n\n")+(bypass?L10n.tr("当前 Wi-Fi 自动直连，上游代理流量不计入这里。"):L10n.tr("流量只含代理转发，不含直连。测速常用 Mbps，本页使用 MB/s，约 8 Mbps = 1 MB/s。"))+L10n.tr("\n\n每秒接收本机采样；数据过期或不可用时显示 —。离开指标页面或 App 后断开采样订阅。"));
     }
     private static String percent(double value){return Double.isNaN(value)||Double.isInfinite(value)||value<0?"—":String.format(Locale.ROOT,"%.1f%%",value);}
     private static String bytes(double n) { if(Double.isNaN(n)||Double.isInfinite(n)||n<0)return "—"; if(n<1024)return String.format(Locale.ROOT,"%.0f B",n);if(n<1048576)return String.format(Locale.ROOT,"%.1f KB",n/1024);if(n<1073741824)return String.format(Locale.ROOT,"%.1f MB",n/1048576);return String.format(Locale.ROOT,"%.2f GB",n/1073741824); }

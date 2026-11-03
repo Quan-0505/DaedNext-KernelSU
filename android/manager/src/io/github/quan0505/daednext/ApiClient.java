@@ -22,6 +22,14 @@ final class ApiClient {
         return token;
     }
     JSONObject get(String path) throws Exception { return request("GET", path, null, true); }
+    HttpURLConnection runtimeEvents() throws Exception {
+        HttpURLConnection connection=(HttpURLConnection)new URL("http://127.0.0.1:2023/api/events/runtime?windowSec=1&maxPoints=1").openConnection(Proxy.NO_PROXY);
+        connection.setConnectTimeout(3000);connection.setReadTimeout(5000);
+        connection.setInstanceFollowRedirects(false);
+        connection.setRequestProperty("Accept","text/event-stream");
+        try{connection.setRequestProperty("Authorization","Bearer "+session());return connection;}
+        catch(Exception error){connection.disconnect();throw error;}
+    }
     JSONObject post(String path, JSONObject body) throws Exception { return request("POST", path, body, false); }
     JSONObject patch(String path, JSONObject body) throws Exception { return request("PUT", path, body, false); }
     JSONObject delete(String path) throws Exception { return request("DELETE", path, null, false); }

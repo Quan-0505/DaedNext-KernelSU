@@ -461,5 +461,9 @@
   "语言": "Language",
   "选择语言": "Choose language",
   "仅更改 App 界面语言，不修改节点、订阅或网络策略。": "Changes the app language only. Nodes, subscriptions and connection policies are retained.",
-  "）：": "): "
+  "）：": "): ",
+  "代理流量 · 不含直连测速；CPU 单核 100%。": "Proxy traffic only; direct speed tests excluded. CPU per core: 100%.",
+  "CPU 单核满载为 100%，多核并行可超过 100%。\n\n": "CPU per core: 100%; multiple cores can exceed 100%.\n\n",
+  "流量只含代理转发，不含直连。测速常用 Mbps，本页使用 MB/s，约 8 Mbps = 1 MB/s。": "Traffic includes proxy forwarding only, excluding direct connections. Speed tests usually use Mbps; this page uses MB/s, approximately 8 Mbps = 1 MB/s.",
+  "\n\n每秒接收本机采样；数据过期或不可用时显示 —。离开指标页面或 App 后断开采样订阅。": "\n\nLocal samples arrive every second. Stale or unavailable values show —. The subscription closes when you leave the metrics pages or the app."
 }

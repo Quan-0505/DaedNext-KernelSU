@@ -2,7 +2,7 @@
 
 原生 Android 管理器，与 DaedNext KernelSU 模块共同工作。交互分工参考 [NetProxy Android Manager](https://github.com/Fanju6/NetProxy-Magisk/tree/main/src/android)，客户端与模块接口独立实现，未复制其 UI 或业务源码。
 
-当前源码版本 **0.1.16**。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha9 ZIP 内包含 Manager 0.1.16；历史 alpha8 ZIP 内为 Manager 0.1.7。
+当前源码版本 **0.1.17**（指标修复，待发布）。桌面使用 C 版卡通叼刀鹅自适应图标，支持圆形、圆角方形及 Android 13 主题图标。首页采用选定的 B 版琉璃鹅核，代理启停使用有限时长的原生聚散／点亮动画。底部「资源」进入六宫格工作台，统一管理配置、DNS、路由、群组、节点和订阅；六项均为原生页面，使用统一图标、分类色、卡片和明暗主题。资源数量来自本机 API，节点数包含独立及订阅节点。支持「设置 → 外观」：跟随系统、浅色 · 云雾、深色 · 星夜。浅色使用暖灰白背景、近白卡片与墨紫主按钮；深色延续星夜风格。视觉参考 [Opal](https://opalapp.com/)，图形独立绘制，不包含 Opal 的图片、商标或字体；维护规范见 [DESIGN.md](DESIGN.md)。alpha9 ZIP 内包含 Manager 0.1.16；历史 alpha8 ZIP 内为 Manager 0.1.7。
 
 ## 安装
 
@@ -58,7 +58,7 @@ $env:ANDROID_HOME = 'C:\Android\sdk'
 python android/manager/build.py
 ```
 
-输出 `android/dist/DaedNext-Manager-v0.1.16.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
+输出 `android/dist/DaedNext-Manager-v0.1.17.apk`，版本名从 Manifest 读取。首次构建在 gitignored 的 `android/private/` 下创建本地 PKCS12 密钥和元数据，后续构建沿用同一身份。**请单独安全备份该目录中的签名材料**；缺失原密钥时不能覆盖更新既有 App。不要把密钥、密码或设备数据提交到 GitHub。
 
 运行 `python android/manager/test-text.py` 可检查多行条件、引号、注释、片段编辑与规则排序的保留行为；CI 同时执行这些纯 Java 检查及原生 App 编译。
 
@@ -78,10 +78,12 @@ python android/manager/build.py --unsigned
 
 alpha9 统一 KernelSU／Magisk／APatch 安装和服务脚本，仅允许 eBPF；目前实机验证仍限 KernelSU。其他管理器的隔离脚本检查不等于真机兼容认证，见 [适配说明](../docs/DEVICE-ADAPTER.md)。
 
-首页先显示 CPU／内存，再显示下载／上传速度。底部“查看运行概况”进入独立原生页面，按状态、服务资源和代理流量分区展示，包含最近采样时间与累计流量；支持明暗主题、手动刷新和前台每 6 秒原位更新，返回首页保留导航归属。
+首页先显示 CPU／内存，再显示下载／上传速度。底部“查看运行概况”进入独立原生页面，按状态、服务资源和代理流量分区展示，包含最近采样时间与累计流量；支持明暗主题、手动刷新和前台每秒 SSE 采样原位更新，返回首页保留导航归属。
 
 首页四项指标紧邻排列，CPU／内存在上，下载／上传在下；首次布局按实际可用高度收缩鹅核区域，使数据卡片优先完整露出。当前网络卡片放在指标之后、高级管理面板之前。
 
 “设置 → 语言”支持跟随系统、简体中文、English；选项仅保存在 App 本地。原生页面、表单和操作提示提供英文，节点名称、SSID、订阅地址及配置原文保持原样。高级 Web 面板使用自身的语言设置。英文文案在 `res/raw/strings_en.json` 维护，`python android/manager/test-l10n.py` 检查文案覆盖与格式。
 
 底部四个图标使用独立的 DreamNavIconView：琉璃小屋、悬浮方块、环绕信号、星瓣齿轮，原生 Canvas 绘制蓝紫／冰蓝渐变、高光和选中光晕，没有静止循环动画。
+
+指标页通过现有 `/api/events/runtime` 接收核心每秒采样；模块状态仍每 6 秒检查。离开首页／运行概况或 App 进入后台时断开订阅，返回时重新连接。采样超过 5 秒、流量不可用或 Wi-Fi 策略直连时，不显示旧速率。CPU／RSS 仅代表后台核心；CPU 单核满载为 100%，多核可超过 100%。下载／上传只含代理转发，直连测速不计入；Speedtest 常用 Mbps，App 使用 MB/s（按 1024 换算），两者不能直接比较数字。指标单行自动缩放字号，避免高速时换行。`python android/manager/test-metrics.py` 检查 SSE 分帧、完整与增量事件、无关事件、截断和大小上限。
