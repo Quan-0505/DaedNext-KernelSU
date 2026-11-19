@@ -29,8 +29,14 @@ pub fn load_attach_aya_sched_classifier(
             backend.as_str()
         ));
     }
-    let (mut report, _link_id) = with_optional_netns(spec.target.netns.as_deref(), || {
-        load_attach_aya_sched_classifier_in_current_netns(loaded, spec, backend)
+    let mut report = with_optional_netns(spec.target.netns.as_deref(), || {
+        // Open before attaching; retain even if restoring the caller namespace fails.
+        let netns = fs::File::open("/proc/thread-self/ns/net")
+            .map_err(|e| format!("retain attach namespace: {e}"))?;
+        let (mut report, link_id, program_fd) =
+            load_attach_aya_sched_classifier_in_current_netns(loaded, spec, backend)?;
+        super::retained_links::retain_tc_link(loaded, &mut report, link_id, program_fd, netns)?;
+        Ok(report)
     })?;
     report.netns = spec.target.netns.clone();
     report.netns_entered = spec.target.netns.is_some();
@@ -63,7 +69,7 @@ pub(super) fn load_attach_detach_aya_sched_classifier_in_current_netns(
     backend: AttachBackend,
 ) -> Result<AyaTcAttachDetachReport, String> {
     load_attach_aya_sched_classifier_in_current_netns(loaded, spec, backend).and_then(
-        |(mut report, link_id)| {
+        |(mut report, link_id, _program_fd)| {
             let program = loaded.ebpf.program_mut(&spec.program_name).ok_or_else(|| {
                 format!(
                     "aya sched classifier program not found for detach: {}",
@@ -86,7 +92,14 @@ pub(super) fn load_attach_aya_sched_classifier_in_current_netns(
     loaded: &mut AyaUserspaceLoadedObject,
     spec: &TcNativeAttachSpec,
     backend: AttachBackend,
-) -> Result<(AyaTcAttachDetachReport, SchedClassifierLinkId), String> {
+) -> Result<
+    (
+        AyaTcAttachDetachReport,
+        SchedClassifierLinkId,
+        aya::programs::ProgramFd,
+    ),
+    String,
+> {
     let ifindex = current_netns_interface_index(&spec.target.iface)?;
     if spec.clsact_required {
         add_clsact_or_accept_existing(&spec.target.iface)?;
@@ -114,6 +127,12 @@ pub(super) fn load_attach_aya_sched_classifier_in_current_netns(
         .map_err(|err| format!("read sched classifier program identity failed: {err:?}"))?;
     let program_id = Some(program_info.id());
     let program_tag = format!("{:016x}", program_info.tag());
+    // Reserve the recovery FD before the first kernel attach side effect.
+    let retained_program_fd = classifier
+        .fd()
+        .map_err(|e| e.to_string())?
+        .try_clone()
+        .map_err(|e| format!("retain classifier program fd: {e}"))?;
     let requested_backend = backend;
     let (
         backend,
@@ -303,6 +322,7 @@ pub(super) fn load_attach_aya_sched_classifier_in_current_netns(
             link_lifetime_owned_by_backend: spec.link_lifetime_owned_by_backend,
         },
         link_id,
+        retained_program_fd,
     ))
 }
 
@@ -473,7 +493,7 @@ pub fn query_aya_interface_index(target: &crate::TcAttachTarget) -> Result<u32, 
     })
 }
 
-fn current_netns_interface_index(iface: &str) -> Result<u32, String> {
+pub(super) fn current_netns_interface_index(iface: &str) -> Result<u32, String> {
     let iface = CString::new(iface)
         .map_err(|_| "interface name contains an interior NUL byte".to_owned())?;
     // SAFETY: `iface` is a live NUL-terminated C string for the duration of
@@ -576,11 +596,14 @@ pub(super) fn attach_loaded_aya_sched_classifier(
     let (attach_options, tcx_anchor, tcx_pre_query_revision, tcx_pre_program_order) = match backend
     {
         AttachBackend::TcNetlink => (
-            TcAttachOptions::Netlink(NlOptions {
-                priority: spec.priority,
-                handle: spec.handle.into(),
-                classid: None,
-            }),
+            TcAttach::Netlink {
+                parent: attach_type.into(),
+                options: NlOptions {
+                    priority: spec.priority,
+                    handle: spec.handle.into(),
+                    classid: None,
+                },
+            },
             None,
             None,
             Vec::new(),
@@ -592,7 +615,10 @@ pub(super) fn attach_loaded_aya_sched_classifier(
             let preparation =
                 prepare_tcx_attach_order(&spec.target.iface, attach_type, spec.tcx_order)?;
             (
-                TcAttachOptions::TcxOrder(preparation.order),
+                TcAttach::Tcx {
+                    attach_type,
+                    order: preparation.order,
+                },
                 preparation.anchor,
                 Some(preparation.query_revision),
                 preparation.program_order,
@@ -600,14 +626,13 @@ pub(super) fn attach_loaded_aya_sched_classifier(
         }
         _ => unreachable!(),
     };
-    let link_id = classifier
-        .attach_with_options(&spec.target.iface, attach_type, attach_options)
-        .map_err(|err| {
-            format!(
-                "aya sched classifier {} attach failed: {err:?}",
-                backend.as_str()
-            )
-        })?;
+    let ifindex = current_netns_interface_index(&spec.target.iface)?;
+    let link_id = classifier.attach(ifindex, attach_options).map_err(|err| {
+        format!(
+            "aya sched classifier {} attach failed: {err:?}",
+            backend.as_str()
+        )
+    })?;
     Ok(LoadedClassifierAttachResult {
         link_id,
         tcx_anchor,
@@ -620,7 +645,8 @@ pub(super) fn query_tcx_program_order(
     iface: &str,
     attach_type: TcAttachType,
 ) -> Result<(u64, Vec<AyaTcxProgramOrderEntry>), String> {
-    let (revision, programs) = SchedClassifier::query_tcx(iface, attach_type)
+    let ifindex = current_netns_interface_index(iface)?;
+    let (revision, programs) = SchedClassifier::query_tcx(ifindex, attach_type)
         .map_err(|err| format!("aya tcx query failed: {err:?}"))?;
     let order = programs
         .into_iter()
@@ -652,3 +678,28 @@ pub(super) fn verify_tcx_program_order(
         expected_order.as_str()
     ))
 }
+
+/// Unload a retained classifier in the namespace where its netlink links live.
+/// Unlike TCX fd links, netlink detach resolves the ifindex in the current netns.
+pub fn unload_aya_sched_classifier_in_netns(
+    loaded: &mut AyaUserspaceLoadedObject,
+    program_name: &str,
+    netns: Option<&str>,
+) -> Result<(), String> {
+    loaded.cleanup_retained_links(Some(program_name))?;
+    with_optional_netns(netns, || {
+        let program = loaded
+            .ebpf
+            .program_mut(program_name)
+            .ok_or_else(|| format!("retained classifier not found: {program_name}"))?;
+        let classifier: &mut SchedClassifier = program
+            .try_into()
+            .map_err(|err| format!("retained program is not a classifier: {err:?}"))?;
+        classifier
+            .unload()
+            .map_err(|err| format!("unload retained classifier: {err:?}"))
+    })
+}
+
+#[cfg(test)]
+mod retained_netns_tests;

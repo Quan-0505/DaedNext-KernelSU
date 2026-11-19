@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 use aya::maps::{Map, MapData, MapType, RingBuf};
 use aya::programs::{
     CgroupAttachMode, CgroupSock, CgroupSockAddr, LinkOrder, Program, ProgramError, ProgramId,
-    SchedClassifier, TcAttachType,
+    SchedClassifier, TcAttach, TcAttachType,
     links::FdLink,
-    tc::{self, NlOptions, SchedClassifierLinkId, TcAttachOptions},
+    tc::{self, NlOptions, SchedClassifierLinkId},
 };
 use aya::util::KernelVersion;
 
@@ -28,7 +28,9 @@ mod load_object;
 pub use self::load_object::*;
 mod trace;
 pub use self::trace::*;
+mod retained_links;
 mod tc_attach;
+mod tc_netlink_query;
 pub use self::tc_attach::*;
 mod tcx_order;
 use self::tcx_order::*;
@@ -52,9 +54,23 @@ pub use self::map_metrics::*;
 
 #[cfg(test)]
 mod object_contract_tests;
+#[cfg(test)]
+mod upgrade_tests;
 
 mod capability_probe;
 pub use self::capability_probe::*;
 
 mod link_metadata;
 pub use self::link_metadata::*;
+
+#[cfg(test)]
+mod listener_lifecycle_tests;
+
+#[cfg(test)]
+mod udp_direction_tests;
+
+#[cfg(test)]
+mod redirect_pressure_tests;
+
+#[cfg(test)]
+mod udp_timer_capacity_tests;

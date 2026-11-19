@@ -24,6 +24,7 @@ pub mod native_ebpf_build {
         // no manifest or source file changed.
         println!("cargo:rerun-if-changed=../../Cargo.lock");
         println!("cargo:rerun-if-changed=../../.cargo/config.toml");
+        println!("cargo:rerun-if-changed=../../rust-toolchain.toml");
         println!("cargo:rerun-if-env-changed=DAE_RUST_NATIVE_BPF_CARGO");
         println!("cargo:rerun-if-env-changed=DAE_RUST_NATIVE_BPF_TOOLCHAIN");
         println!("cargo:rerun-if-env-changed=DAE_RUST_NATIVE_BPF_STRIP");
@@ -103,7 +104,7 @@ pub mod native_ebpf_build {
     ) {
         let cargo = env::var("DAE_RUST_NATIVE_BPF_CARGO").ok();
         let toolchain =
-            env::var("DAE_RUST_NATIVE_BPF_TOOLCHAIN").unwrap_or_else(|_| "nightly".to_owned());
+            env::var("DAE_RUST_NATIVE_BPF_TOOLCHAIN").unwrap_or_else(|_| "1.100.0".to_owned());
         let target_dir = out_dir.join("native-ebpf-target");
         let mut command = match cargo {
             Some(cargo) => Command::new(cargo),
@@ -116,6 +117,9 @@ pub mod native_ebpf_build {
         command
             .current_dir(repo_root)
             .env("CARGO_TARGET_DIR", &target_dir)
+            // BPF has no distributed core, and Aya uses experimental BPF asm.
+            // Enable these only for this nested build with the pinned compiler.
+            .env("RUSTC_BOOTSTRAP", "1")
             .env_remove("CARGO")
             .env_remove("CARGO_ENCODED_RUSTFLAGS")
             .env_remove("RUSTC")
@@ -124,6 +128,7 @@ pub mod native_ebpf_build {
             .env_remove("RUSTDOC")
             .env_remove("RUSTFLAGS")
             .arg("build")
+            .arg("--locked")
             .arg("-Z")
             .arg("build-std=core")
             .arg("--manifest-path")

@@ -31,7 +31,7 @@
     {
       "flags": 0,
       "key_size": 4,
-      "max_entries": 4,
+      "max_entries": 5,
       "name": "listen_socket_map",
       "pinning": "PinNone",
       "type": "SockMap",
@@ -66,6 +66,15 @@
     },
     {
       "flags": 0,
+      "key_size": 48,
+      "max_entries": 65536,
+      "name": "redirect_udp",
+      "pinning": "PinNone",
+      "type": "LRUHash",
+      "value_size": 24
+    },
+    {
+      "flags": 0,
       "key_size": 4,
       "max_entries": 1024,
       "name": "routing_map",
@@ -89,7 +98,7 @@
       "name": "tproxy_metrics",
       "pinning": "PinNone",
       "type": "PerCpuArray",
-      "value_size": 64
+      "value_size": 80
     },
     {
       "flags": 0,

@@ -8,7 +8,7 @@ use dae_config::Config;
 use dae_ebpf_support::{
     AttachBackend, LiveLoadedTproxyListenSocketMap, RuntimeMapCapacity, RuntimeMapSnapshot,
     dae_cgroup_attach_matrix, map_capacity_by_id, map_capacity_fast_by_id, map_catalog, map_ids,
-    open_live_loaded_tproxy_listen_socket_map_in_netns, runtime_map_name_matches,
+    runtime_map_name_matches,
 };
 use serde_json::{Value, json};
 
@@ -65,6 +65,8 @@ mod runtime_read_view;
 pub(crate) use self::runtime_read_view::*;
 mod prepared_generation;
 pub(crate) use self::prepared_generation::*;
+mod dataplane_admission;
+use self::dataplane_admission::*;
 mod start_entry;
 pub use self::start_entry::*;
 mod candidate_preflight;

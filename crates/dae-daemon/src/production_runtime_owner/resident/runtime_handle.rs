@@ -183,9 +183,12 @@ impl ResidentProductionRuntime {
     }
 
     pub(crate) fn release_reload_conflicts(&mut self) -> Value {
-        if let Some(report) = self.reload_conflict_cleanup.as_ref() {
+        if let Some(report) = self.reload_conflict_cleanup.as_ref()
+            && report["status"] == "pass"
+        {
             return report.clone();
         }
+        let attempt_step_start = self.cleanup_steps.len();
         let started = Instant::now();
         let mut phase_timings = Vec::new();
 
@@ -232,11 +235,18 @@ impl ResidentProductionRuntime {
         let native_peer_attached = self.native_runtime.peer_attached();
         let native_host_attached = self.native_runtime.host_attached();
         let phase_started = Instant::now();
-        self.native_runtime.reset();
+        let native_reset = self.native_runtime.reset();
+        let native_reset_ok = native_reset.is_ok();
+        self.cleanup_steps.push(json!({
+            "name": "reset-native-ebpf-owner",
+            "status": if native_reset_ok { "pass" } else { "fail" },
+            "error": native_reset.err(),
+            "report": self.native_runtime.cleanup_evidence(),
+        }));
         push_cleanup_phase_timing(
             &mut phase_timings,
             "native_ebpf_reset",
-            "pass",
+            if native_reset_ok { "pass" } else { "fail" },
             phase_started.elapsed(),
         );
 
@@ -248,6 +258,22 @@ impl ResidentProductionRuntime {
             "pass",
             phase_started.elapsed(),
         );
+
+        if !native_reset_ok {
+            // Keep topology, pins and physical ownership available for another
+            // explicit attempt. Deleting the namespace now would hide failures.
+            let report = json!({
+                "status": "fail", "native_cleanup_pending": true,
+                "native_cleanup": self.native_runtime.cleanup_evidence(),
+                "binding_cleanup_postflight": self.binding_registry.cleanup_postflight(),
+                "loaded_map_cleaned": false, "after_map_ids": [],
+                "leftovers_after_cleanup": runtime_resource_leftovers(false),
+                "sys_fs_bpf_dae_mutated": self.before_pin_snapshot != bpf_dae_snapshot(),
+                "phaseTimings": phase_timings,
+            });
+            self.reload_conflict_cleanup = Some(report.clone());
+            return report;
+        }
 
         let phase_started = Instant::now();
         let binding_cleanup_postflight = self.binding_registry.cleanup_postflight();
@@ -319,14 +345,27 @@ impl ResidentProductionRuntime {
         let cleanup_command_timed_out = self
             .cleanup_steps
             .iter()
+            .skip(attempt_step_start)
             .any(|step| step["timed_out"].as_bool().unwrap_or(false));
+        let cleanup_step_failed = self
+            .cleanup_steps
+            .iter()
+            .skip(attempt_step_start)
+            .any(|step| {
+                matches!(
+                    step["status"].as_str(),
+                    Some("fail" | "partial" | "timed_out")
+                )
+            });
         let elapsed_ns = started.elapsed().as_nanos().min(u128::from(u64::MAX)) as u64;
         let report = json!({
             "status": if binding_cleanup_ok
+                && native_reset_ok
                 && loaded_map_cleaned
                 && leftovers_after_cleanup.is_empty()
                 && !sys_fs_bpf_dae_mutated
                 && !cleanup_command_timed_out
+                && !cleanup_step_failed
             { "pass" } else { "fail" },
             "binding_cleanup_postflight": binding_cleanup_postflight,
             "after_map_ids": after_map_ids,
@@ -346,6 +385,7 @@ impl ResidentProductionRuntime {
         if self.cleaned {
             return None;
         }
+        let attempt_step_start = self.cleanup_steps.len();
         let cleanup_started = Instant::now();
         let mut cleanup_phase_timings = Vec::new();
 
@@ -411,22 +451,28 @@ impl ResidentProductionRuntime {
         let cleanup_command_timed_out = self
             .cleanup_steps
             .iter()
+            .skip(attempt_step_start)
             .any(|step| step["timed_out"].as_bool().unwrap_or(false));
-        let cleanup_step_failed = self.cleanup_steps.iter().any(|step| {
-            matches!(
-                step["status"].as_str(),
-                Some("fail" | "partial" | "timed_out")
-            )
-        });
+        let cleanup_step_failed = self
+            .cleanup_steps
+            .iter()
+            .skip(attempt_step_start)
+            .any(|step| {
+                matches!(
+                    step["status"].as_str(),
+                    Some("fail" | "partial" | "timed_out")
+                )
+            });
         let evidence_ok = evidence_phase_ok(evidence_status);
         let mut cleanup_report = json!({
-            "status": if binding_cleanup_ok && loaded_map_cleaned && leftovers_after_cleanup.is_empty() && !sys_fs_bpf_dae_mutated && !cleanup_command_timed_out && !cleanup_step_failed && evidence_ok {
+            "status": if conflict_cleanup["status"] == "pass" && binding_cleanup_ok && loaded_map_cleaned && leftovers_after_cleanup.is_empty() && !sys_fs_bpf_dae_mutated && !cleanup_command_timed_out && !cleanup_step_failed && evidence_ok {
                 "pass"
             } else {
                 "fail"
             },
             "evidence_writer_status": evidence_status,
             "cleanup_steps": self.cleanup_steps.clone(),
+            "current_attempt_step_start": attempt_step_start,
             "cleanup_phase_timings": cleanup_phase_timings.clone(),
             "cleanup_elapsed_ns": cleanup_elapsed_ns,
             "cleanup_elapsed_ms": cleanup_elapsed_ns / 1_000_000,
@@ -472,7 +518,7 @@ impl ResidentProductionRuntime {
                 map.insert("cleanup_report_write_failed".to_owned(), json!(true));
             }
         }
-        self.cleaned = true;
+        self.cleaned = cleanup_report["status"] == "pass";
         self.read_handle.mark_stopped();
         Some(cleanup_report)
     }
@@ -495,7 +541,14 @@ fn push_cleanup_phase_timing(
 
 impl Drop for ResidentProductionRuntime {
     fn drop(&mut self) {
-        let _ = self.cleanup();
+        if let Some(report) = self.cleanup()
+            && report["status"] != "pass"
+        {
+            eprintln!(
+                "resident physical owner {} cleanup incomplete: {report}",
+                self.runtime_generation
+            );
+        }
     }
 }
 

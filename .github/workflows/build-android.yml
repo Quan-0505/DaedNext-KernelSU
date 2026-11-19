@@ -1,17 +1,10 @@
 name: Build Android module
 on:
   workflow_dispatch:
-    inputs:
-      rebuild_panel:
-        description: Rebuild the locked upstream panel instead of reusing baseline panel assets
-        type: boolean
-        required: false
-        default: false
 permissions:
   contents: read
 env:
-  RUSTUP_TOOLCHAIN: '1.98.0'
-  DAE_RUST_NATIVE_BPF_TOOLCHAIN: nightly-2026-09-01
+  RUSTUP_TOOLCHAIN: '1.100.0'
   CARGO_BUILD_JOBS: '2'
 jobs:
   build:
@@ -25,9 +18,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y clang llvm cmake perl pkg-config libssl-dev
-          rustup toolchain install 1.98.0 --profile minimal
-          rustup target add aarch64-linux-android --toolchain 1.98.0
-          rustup toolchain install nightly-2026-09-01 --profile minimal --component rust-src
+          rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --component rust-src --target aarch64-linux-android
           cargo install bpf-linker --version 0.10.3 --locked
       - name: Install Android NDK r27c
         run: |
@@ -39,18 +30,16 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: android-r27c-rust198-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs', 'android/upstream.lock.json') }}
-          restore-keys: android-r27c-rust198-${{ runner.os }}-
+          key: android-r27c-rust1100-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'crates/**/*.rs', 'android/upstream.lock.json') }}
+          restore-keys: android-r27c-rust1100-${{ runner.os }}-
       - name: Restore verified runtime inputs
         run: python3 android/tools/fetch-runtime.py
       - name: Build Android core from this checkout
         run: bash android/tools/build-android.sh
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
-        if: inputs.rebuild_panel
         with:
           node-version: '22'
       - name: Build locked panel
-        if: inputs.rebuild_panel
         run: |
           corepack enable
           corepack prepare pnpm@10.24.0 --activate

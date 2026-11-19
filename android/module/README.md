@@ -2,7 +2,7 @@
 
 ARM64 Android 上的 DaeNext 原生透明代理模块，提供 KernelSU WebUI、完整 DaedNext 管理面板、开机服务、持久化配置和启停/备份命令。
 
-这是 Android 测试版本。核心基于 DaeNext `work/boringssl` 的 `a87b3416e9ecd746cc47fba7b77eec11b08d3cf3`；完整 Android 补丁见 `android/patches/android-complete.patch`。面板源码版本见 `panel-commit.txt`。
+这是 Android 测试版本。核心基于 DaeNext `work/boringssl` 的 `c993cb1563ed3f5e4cc2ca1da57e35c6348e6386`，完整 Android 补丁见 `android/patches/android-complete.patch`。面板源码版本见 `panel-commit.txt`。
 
 ## 安装与使用
 

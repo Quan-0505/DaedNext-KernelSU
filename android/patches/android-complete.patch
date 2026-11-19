@@ -1,8 +1,8 @@
 diff --git a/crates/dae-build-support/src/lib.rs b/crates/dae-build-support/src/lib.rs
-index c30990aa..e41721da 100644
+index c99e412b..51c93ee3 100644
 --- a/crates/dae-build-support/src/lib.rs
 +++ b/crates/dae-build-support/src/lib.rs
-@@ -133,6 +133,10 @@ pub mod native_ebpf_build {
+@@ -138,6 +138,10 @@ pub mod native_ebpf_build {
              .arg("--target")
              .arg("bpfel-unknown-none")
              .arg("--release");
@@ -1070,7 +1070,7 @@ index 00000000..f97e99dc
 +    }
 +}
 diff --git a/crates/dae-daemon/src/production_runtime_owner/command.rs b/crates/dae-daemon/src/production_runtime_owner/command.rs
-index 7d69ed0e..4e3c7d5e 100644
+index 33fd20e0..37a80712 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/command.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/command.rs
 @@ -94,7 +94,7 @@ pub(super) fn iface_exists(iface: &str) -> bool {
@@ -1245,10 +1245,10 @@ index de7c543d..4e179266 100644
 +    assert!(routes[0].gateway.is_unspecified());
 +}
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
-index 0350e460..11f3d3fd 100644
+index 9a748e1a..91ca3224 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_entry.rs
-@@ -115,18 +115,25 @@ pub(super) fn resident_runtime_options(
+@@ -116,18 +116,25 @@ pub(super) fn resident_runtime_options(
      })
  }
  
@@ -1283,66 +1283,60 @@ index 0350e460..11f3d3fd 100644
  
  fn cleanup_runtime_artifact_root(root: &Path, prefix: &str, current_artifact_dir: Option<&Path>) {
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs b/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
-index f64f9560..f7eb2a35 100644
+index 8805ba81..cb274824 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
 +++ b/crates/dae-daemon/src/production_runtime_owner/resident/start_flow.rs
-@@ -239,6 +239,47 @@ pub(super) fn start_with_options(
-         );
-         ok = cgroup_ok;
- 
-+        let mut resident_lan_routing = Vec::new();
-+        let mut resident_routing_apply_cache = ResidentRoutingApplyCache::default();
-+        // A phone has only locally originated WAN traffic. The shared routing
-+        // maps must be published even when there is no LAN attach loop. Publish
-+        // before WAN attach so packets never encounter an empty routing table.
-+        if ok && lan_ifaces.is_empty() {
-+            let routing_update = native_runtime
-+                .loaded_map_id("routing_map")
-+                .ok_or_else(|| "WAN-only runtime did not expose routing_map".to_owned())
-+                .and_then(|routing_map_id| {
-+                    update_existing_resident_routing_map(
-+                        routing_map_id,
-+                        native_runtime.loaded_map_id("lpm_array_map"),
-+                        native_runtime.loaded_map_id("outbound_connectivity_map"),
-+                        config,
-+                        &geodata,
-+                        &mut resident_routing_apply_cache,
-+                    )
-+                });
-+            let routing = match routing_update {
-+                Ok((value, id)) => {
-+                    discovered_routing_map_ids.push(Some(id));
-+                    value
+@@ -232,6 +232,7 @@ pub(super) fn start_with_options(
+         // WAN and LAN attach phase finishes. It cannot survive a reset/rebind.
+         let routing_required = ok && options.native_ebpf_requested;
+         let pname_rules_required = resident_routing_requires_process_name(config);
++        let mut wan_only_routing = None;
+         let prepare =
+             |native_runtime: &mut NativeEbpfRuntimeState,
+              context: &mut (&mut Vec<Value>, &mut ResidentRoutingApplyCache)| {
+@@ -239,7 +240,7 @@ pub(super) fn start_with_options(
+                 let routing_map_id = native_runtime
+                     .loaded_map_id("routing_map")
+                     .ok_or_else(|| "native peer load did not expose routing_map".to_owned())?;
+-                let (routing, _) = update_existing_resident_routing_map(
++                let (routing, id) = update_existing_resident_routing_map(
+                     routing_map_id,
+                     native_runtime.loaded_map_id("lpm_array_map"),
+                     native_runtime.loaded_map_id("outbound_connectivity_map"),
+@@ -256,6 +257,9 @@ pub(super) fn start_with_options(
+                 "outbound_connectivity_map_id": native_runtime.loaded_map_id("outbound_connectivity_map"),
+                 "routing": routing,
+             }));
++                if lan_ifaces.is_empty() {
++                    wan_only_routing = Some((id, routing));
 +                }
-+                Err(err) => {
-+                    ok = false;
-+                    json!({"status": "fail", "error": err})
-+                }
-+            };
-+            executed_steps.push(json!({
-+                "name": "publish-wan-only-routing-before-attach",
-+                "status": if ok { "pass" } else { "fail" },
-+                "routing_map_update": routing.clone(),
-+            }));
+                 Ok(())
+             };
+         let mut attach =
+@@ -443,7 +447,7 @@ pub(super) fn start_with_options(
+             resident_cgroup_attach,
+             resident_wan_attach,
+             resident_lan_attach,
+-            resident_lan_routing,
++            mut resident_lan_routing,
+         ) = if routing_required {
+             with_prepared_routing(
+                 &mut native_runtime,
+@@ -457,6 +461,14 @@ pub(super) fn start_with_options(
+             attach(&mut native_runtime, &mut context)?
+         };
+         ok = attached;
++        if let Some((id, routing)) = wan_only_routing {
++            discovered_routing_map_ids.push(Some(id));
 +            resident_lan_routing.push(json!({
 +                "interface": Value::Null,
 +                "scope": "wan-only",
 +                "routing_map_update": routing,
 +            }));
 +        }
-+
-         let (wan_ok, resident_wan_attach) = attach_resident_wan_programs(
-             &mut executed_steps,
-             &interface_attach_options,
-@@ -250,8 +291,6 @@ pub(super) fn start_with_options(
-         ok = wan_ok;
  
-         let mut resident_lan_attach = Vec::new();
--        let mut resident_lan_routing = Vec::new();
--        let mut resident_routing_apply_cache = ResidentRoutingApplyCache::default();
-         for iface in &lan_ifaces {
-             if ok {
-                 let link_layer = match interface_link_layer(iface) {
+         let resident_dataplane = if ok {
+             match live_handoff.as_ref() {
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs b/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
 index 5467a8c7..0441e4d8 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident_interfaces.rs
@@ -1528,10 +1522,10 @@ index 98fb03e1..6e44f203 100644
 +    }
  }
 diff --git a/crates/dae-ebpf-program/Cargo.toml b/crates/dae-ebpf-program/Cargo.toml
-index f785608f..daa18102 100644
+index 44617af9..e3351406 100644
 --- a/crates/dae-ebpf-program/Cargo.toml
 +++ b/crates/dae-ebpf-program/Cargo.toml
-@@ -13,6 +13,7 @@ default = ["tproxy-program"]
+@@ -14,6 +14,7 @@ default = ["tproxy-program"]
  tproxy-program = []
  pname-core = []
  trace-program = []
@@ -1540,7 +1534,7 @@ index f785608f..daa18102 100644
  [dependencies]
  aya-ebpf.workspace = true
 diff --git a/crates/dae-ebpf-program/src/routing.rs b/crates/dae-ebpf-program/src/routing.rs
-index 6dac30a6..00382a53 100644
+index 21025d5f..132a8e4a 100644
 --- a/crates/dae-ebpf-program/src/routing.rs
 +++ b/crates/dae-ebpf-program/src/routing.rs
 @@ -14,7 +14,12 @@ use crate::packet::{self, IPPROTO_TCP, ParsedPacket};
@@ -1556,7 +1550,7 @@ index 6dac30a6..00382a53 100644
  const LATENCY_PROBE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-latency\0\0\0\0";
  const GEODATA_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-geodata\0\0\0\0";
  const SUBSCRIPTION_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-subscript\0\0";
-@@ -155,6 +160,27 @@ pub fn pid_pname_for_packet(skb: *mut __sk_buff) -> *mut BpfPidPname {
+@@ -192,6 +197,27 @@ pub fn pid_pname_for_packet(skb: *mut __sk_buff) -> *mut BpfPidPname {
      .cast::<BpfPidPname>()
  }
  
@@ -1584,7 +1578,7 @@ index 6dac30a6..00382a53 100644
  #[inline(always)]
  pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) -> bool {
      if !pid_pname.is_null() {
-@@ -162,12 +188,12 @@ pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) ->
+@@ -199,12 +225,12 @@ pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) ->
          if pid_tproxy != 0 && unsafe { (*pid_pname).pid } == pid_tproxy {
              return true;
          }
@@ -1599,7 +1593,7 @@ index 6dac30a6..00382a53 100644
  }
  
  #[inline(always)]
-@@ -577,6 +603,33 @@ mod tests {
+@@ -636,6 +662,33 @@ mod tests {
  
      const HELPER_PARENT_ARGV0_BASENAME: &[u8] = b"daed";
  
@@ -1634,7 +1628,7 @@ index 6dac30a6..00382a53 100644
          let mut out = [0; TASK_COMM_LEN];
          for (dst, src) in out.iter_mut().zip(bytes.iter().copied()) {
 diff --git a/crates/dae-ebpf-support/src/aya_loader/netns.rs b/crates/dae-ebpf-support/src/aya_loader/netns.rs
-index 174d2a6a..9704c63c 100644
+index 13507edf..72cebb77 100644
 --- a/crates/dae-ebpf-support/src/aya_loader/netns.rs
 +++ b/crates/dae-ebpf-support/src/aya_loader/netns.rs
 @@ -56,13 +56,36 @@ impl Drop for NetnsGuard {

@@ -2,6 +2,7 @@
 name = "dae-ebpf-loader"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 
@@ -12,7 +13,6 @@ native-ebpf = ["dae-ebpf-support/aya-loader"]
 [dependencies]
 dae-runtime-control.workspace = true
 dae-ebpf-support.workspace = true
-fastrand.workspace = true
 libc.workspace = true
 serde_json.workspace = true
 

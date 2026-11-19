@@ -99,7 +99,7 @@ fn load_aya_userspace_object_from_source(
 
     let mut loader = aya::EbpfLoader::new();
     if let Some(btf) = target_btf.btf.as_ref() {
-        loader.btf(Some(btf));
+        loader.btf(btf);
     }
     if options.allow_unsupported_maps {
         loader.allow_unsupported_maps();
@@ -167,7 +167,13 @@ fn load_aya_userspace_object_from_source(
     }
     report.capability_probe = Some(cached_aya_capability_probes());
     pin_transaction.commit();
-    Ok(AyaUserspaceLoadedObject { ebpf, report })
+    Ok(AyaUserspaceLoadedObject {
+        attachments: Vec::new(),
+        ebpf,
+        report,
+        #[cfg(test)]
+        pin_guard: None,
+    })
 }
 
 fn loaded_map_specs(ebpf: &aya::Ebpf) -> Result<Vec<AyaLoadedMapSpec>, String> {

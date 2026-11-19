@@ -448,19 +448,21 @@ pub(super) fn build_aya_compatible_bpf_object(root: &std::path::Path, output: &s
         std::process::id()
     ));
     let toolchain =
-        std::env::var("DAE_RUST_NATIVE_BPF_TOOLCHAIN").unwrap_or_else(|_| "nightly".to_owned());
+        std::env::var("DAE_RUST_NATIVE_BPF_TOOLCHAIN").unwrap_or_else(|_| "1.100.0".to_owned());
     let status = std::process::Command::new("rustup")
         .arg("run")
         .arg(toolchain)
         .arg("cargo")
         .current_dir(workspace_root)
         .env("CARGO_TARGET_DIR", &target_dir)
+        .env("RUSTC_BOOTSTRAP", "1")
         .env_remove("CARGO")
         .env_remove("CARGO_ENCODED_RUSTFLAGS")
         .env_remove("RUSTC")
         .env_remove("RUSTDOC")
         .env_remove("RUSTFLAGS")
         .arg("build")
+        .arg("--locked")
         .arg("-Z")
         .arg("build-std=core")
         .arg("--manifest-path")

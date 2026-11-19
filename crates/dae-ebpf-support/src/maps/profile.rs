@@ -6,26 +6,31 @@ pub enum RuntimeMapProfile {
     HighPerformance,
 }
 
-const LOW_MEMORY_CAPACITIES: [(&str, u32); 5] = [
+// Each protocol keeps the previous shared pool's full capacity. This preserves
+// single-protocol headroom while isolating churn; budget memory for both maps.
+const LOW_MEMORY_CAPACITIES: [(&str, u32); 6] = [
     ("cookie_pid_map", 8_192),
     ("domain_routing_map", 8_192),
     ("redirect_track", 8_192),
+    ("redirect_udp", 8_192),
     ("routing_tuples_map", 16_384),
     ("udp_conn_state_map", 16_384),
 ];
 
-const BALANCED_CAPACITIES: [(&str, u32); 5] = [
+const BALANCED_CAPACITIES: [(&str, u32); 6] = [
     ("cookie_pid_map", 32_768),
     ("domain_routing_map", 32_768),
     ("redirect_track", 32_768),
+    ("redirect_udp", 32_768),
     ("routing_tuples_map", 65_536),
     ("udp_conn_state_map", 65_536),
 ];
 
-const HIGH_PERFORMANCE_CAPACITIES: [(&str, u32); 5] = [
+const HIGH_PERFORMANCE_CAPACITIES: [(&str, u32); 6] = [
     ("cookie_pid_map", 65_536),
     ("domain_routing_map", 65_536),
     ("redirect_track", 65_536),
+    ("redirect_udp", 65_536),
     ("routing_tuples_map", 131_072),
     ("udp_conn_state_map", 131_072),
 ];

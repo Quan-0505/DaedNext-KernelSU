@@ -2,41 +2,37 @@
 
 ## 修改服务 / WebUI 后重新打包
 
-Python 3.10+、Git 即可完成这一流程，Windows 和 Linux 均可使用。它复用 alpha7 发布包内已验证的核心、面板、NDK 运行库与 geodata，不重新编译 Rust。
+Python 3.10+、Git 即可重打包与运行时种子版本匹配的源码，Windows 和 Linux 均可使用。当前种子为 alpha10，包含核心、面板、Manager 0.1.17、NDK 运行库与 geodata。构建 alpha11 请使用下方完整构建流程。
 
 ```sh
 git clone https://github.com/Quan-0505/DaedNext-KernelSU.git
 cd DaedNext-KernelSU
 python android/tools/fetch-runtime.py
-python android/manager/build.py
-python -c "import shutil; shutil.copyfile('android/dist/DaedNext-Manager-v0.1.16.apk', 'android/module/manager/DaedNext-Manager.apk')"
 python android/tools/seed-defaults.py
 python android/tools/package.py
 ```
 
-安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中，不生成单独校验附件。离线已有 alpha7 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha7-arm64.zip`；脚本先检查锁定的 SHA256，只提取构建输入，不导入配置或用户数据。
+安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中。离线已有 alpha10 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip`；脚本校验锁定的 SHA256 后提取构建输入。
 
-恢复脚本会取回旧版 APK；修改 App 后须按上述步骤构建并替换。App 构建需要 JDK 17、Android SDK 35 与 Build Tools 35.0.0，签名维护见 [管理器说明](../manager/README.md)。
+修改 App 后运行 `python android/manager/build.py`，将生成的 APK 复制到 `android/module/manager/DaedNext-Manager.apk`。App 构建需要 JDK 17、Android SDK 35 与 Build Tools 35.0.0，签名维护见 [管理器说明](../manager/README.md)。
 
 发布新版本前修改 `android/module/module.prop` 的 version/versionCode，更新 WebUI 版本标识及 CHANGELOG。不要把用户数据库复制到 module/defaults；默认数据库由源码 schema 生成。
 
 ## 修改 Rust 核心后完整构建
 
-已使用的工具链：Rust 1.98.0、nightly-2026-09-01（rust-src）、bpf-linker 0.10.3、Android NDK r27c / 27.2.12479018。构建入口面向 Linux x86_64，建议至少 8 GiB 内存和充足磁盘。
+工具链为 Rust 1.100.0（含用于嵌入式 eBPF 的 rust-src）、bpf-linker 0.10.3、Android NDK r27c / 27.2.12479018。构建入口面向 Linux x86_64，建议至少 8 GiB 内存和充足磁盘。
 
 Debian/Ubuntu 依赖包括 build-essential、clang/LLVM、CMake、Perl、pkg-config、Python 3、Git。安装 rustup 与官方 Android NDK 后：
 
 ```sh
-rustup toolchain install 1.98.0 --profile minimal
-rustup target add aarch64-linux-android --toolchain 1.98.0
-rustup toolchain install nightly-2026-09-01 --profile minimal --component rust-src
-cargo +1.98.0 install bpf-linker --version 0.10.3 --locked
-export RUSTUP_TOOLCHAIN=1.98.0
-export DAE_RUST_NATIVE_BPF_TOOLCHAIN=nightly-2026-09-01
+rustup toolchain install 1.100.0 --profile minimal --component rust-src --target aarch64-linux-android
+cargo +1.100.0 install bpf-linker --version 0.10.3 --locked
 export ANDROID_NDK_HOME=/path/to/android-ndk-r27c
 python3 android/tools/fetch-runtime.py
 bash android/tools/build-android.sh --check-env
 bash android/tools/build-android.sh
+corepack enable
+bash android/tools/build-panel.sh
 python3 android/tools/seed-defaults.py
 python3 android/tools/package.py
 ```
@@ -85,6 +81,6 @@ cargo test --locked -p dae-daemon --lib production_runtime_owner::topology::test
 ## GitHub Actions
 
 - Android source checks：检查新增 Android 源码、Shell/Python/JavaScript 语法以及空白默认数据库，不声称覆盖 Android 数据面。
-- Build Android module：手动完整构建核心，复用锁定的面板/geodata 输入并上传 Artifact；选择 rebuild_panel 可重新编译锁定面板。工作流不自动创建 Release。
+- Build Android module：手动构建锁定的核心与面板，复用运行时种子中的 Manager 和 geodata，并上传 ZIP Artifact。Release 在实机验收后发布。
 
 不要把 SSH 密码、订阅或手机数据库放进 Actions 变量或构建产物。GitHub Release 只上传模块 ZIP 和独立 APK 两个附件，不上传单独的 SHA256 文件；如需展示校验值，写在发布说明中。新版本在实机通过验收后再发布。

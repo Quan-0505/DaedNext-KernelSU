@@ -484,13 +484,13 @@ fn update_high_water(high_water: &AtomicUsize, value: usize) {
 }
 
 fn subtract_active(active: &AtomicUsize) {
-    let _ = active.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
+    let _ = active.try_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
         Some(value.saturating_sub(1))
     });
 }
 
 fn subtract_count(active: &AtomicUsize, count: usize) {
-    let _ = active.fetch_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
+    let _ = active.try_update(Ordering::AcqRel, Ordering::Relaxed, |value| {
         Some(value.saturating_sub(count))
     });
 }
@@ -1852,7 +1852,7 @@ impl Hysteria2OwnerBuildError {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::result_large_err)] // Error owns endpoint cleanup.
 async fn build_hysteria2_transport(
     key: Hysteria2OwnerKey,
     binding: ResidentProxyBinding,

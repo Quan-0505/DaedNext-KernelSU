@@ -26,6 +26,7 @@ resource_log="${RUNTIME_RESOURCE_LOG:-/tmp/dae-native-ebpf-runtime-resources-${r
 backend="${NATIVE_EBPF_BACKEND:-${DAE_NATIVE_EBPF_BACKEND:-auto}}"
 netns_link="${NETNS_LINK:-${DAE_NETNS_LINK:-auto}}"
 native_object_mode="${NATIVE_EBPF_OBJECT_MODE:-auto}"
+native_toolchain="${DAE_RUST_NATIVE_BPF_TOOLCHAIN:-1.100.0}"
 runtime_timeout="${RUNTIME_TIMEOUT:-180s}"
 
 case "$native_object_mode" in
@@ -51,7 +52,7 @@ mkdir -p "$run_root"
 
 echo "building native Aya loader object from crates/dae-ebpf-program"
 echo "native object source: crates/dae-ebpf-program"
-cargo +nightly build -Z build-std=core --manifest-path Cargo.toml \
+RUSTC_BOOTSTRAP=1 cargo "+$native_toolchain" build --locked -Z build-std=core --manifest-path Cargo.toml \
   -p dae-ebpf-program \
   --target bpfel-unknown-none \
   --release
@@ -66,7 +67,7 @@ if ! grep -q ' PARAM$' <<<"$native_object_symbols"; then
 fi
 
 echo "running Aya cgroup attach/detach gate"
-if ! DAE_RUN_AYA_CGROUP_ATTACH_SMOKE=1 cargo test --manifest-path Cargo.toml \
+if ! DAE_RUN_AYA_CGROUP_ATTACH_SMOKE=1 DAE_TEST_NATIVE_BPF_OBJECT="$rust_native_object" cargo test --locked --manifest-path Cargo.toml \
   -p dae-ebpf-support \
   --features aya-loader \
   aya_cgroup_attach_detach_smoke_is_env_gated \
@@ -81,6 +82,64 @@ if grep -q 'skip aya cgroup attach smoke' "$cgroup_log"; then
   exit 1
 fi
 echo "Aya cgroup attach/detach gate passed"
+
+echo "running every L2 TC role through the kernel verifier"
+tc_roles_log="${cgroup_log}.tc-roles"
+if ! DAE_RUN_AYA_LOAD_SMOKE=1 DAE_TEST_NATIVE_BPF_OBJECT="$rust_native_object" cargo test --locked --manifest-path Cargo.toml \
+  -p dae-ebpf-support --features aya-loader --lib \
+  aya_upgrade_all_l2_tc_roles_pass_the_kernel_verifier_is_env_gated \
+  -- --nocapture >"$tc_roles_log" 2>&1; then
+  tail -c 20000 "$tc_roles_log" >&2 || true
+  exit 1
+fi
+if ! grep -Fq 'test result: ok. 1 passed;' "$tc_roles_log"; then
+  echo "L2 TC verifier gate did not execute its required test" >&2
+  tail -c 20000 "$tc_roles_log" >&2 || true
+  exit 1
+fi
+
+# These tests must execute, not silently pass an env-gated empty body.
+run_listener_lifecycle_test() {
+  local label="$1" expected="$2" flag="$3" package="$4" feature="$5" filter="$6"
+  local log="${cgroup_log}.${label}"
+  if ! env "$flag=1" DAE_TEST_NATIVE_BPF_OBJECT="$rust_native_object" \
+    cargo test --locked -p "$package" --features "$feature" --lib "$filter" \
+    -- --test-threads=1 --nocapture >"$log" 2>&1; then
+    tail -c 4000 "$log" >&2 || true
+    exit 1
+  fi
+  if ! grep -Fq "test result: ok. $expected passed;" "$log" || grep -q '^skip ' "$log"; then
+    echo "listener lifecycle gate did not execute: $label" >&2
+    tail -c 4000 "$log" >&2 || true
+    exit 1
+  fi
+}
+run_listener_lifecycle_test retained-cleanup 3 DAE_RUN_LISTENER_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader retained_links::tests
+run_listener_lifecycle_test retained-netns 1 DAE_RUN_LISTENER_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader retained_netns_tests
+run_listener_lifecycle_test listener-negative 4 DAE_RUN_LISTENER_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader listener_lifecycle_tests
+run_listener_lifecycle_test startup-routing 6 DAE_RUN_STARTUP_ROUTING_TESTS \
+  dae-daemon native-ebpf startup_routing_tests
+run_listener_lifecycle_test resident-startup 1 DAE_RUN_RESIDENT_STARTUP_SMOKE \
+  dae-daemon native-ebpf startup_routing_kernel_tests
+run_listener_lifecycle_test resident-listener-failure 1 DAE_RUN_RESIDENT_STARTUP_SMOKE \
+  dae-daemon native-ebpf startup_listener_kernel_tests
+run_listener_lifecycle_test udp-timer-capacity 1 DAE_RUN_LISTENER_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader udp_timer_capacity_tests
+run_listener_lifecycle_test udp-direction 5 DAE_RUN_LISTENER_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader udp_direction_tests
+run_listener_lifecycle_test redirect-pressure 2 DAE_RUN_LISTENER_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader redirect_pressure_tests
+run_listener_lifecycle_test sockmap-publication 1 DAE_RUN_SOCKMAP_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader kernel_sockmap_staging_rollback_and_cookie_idempotence
+run_listener_lifecycle_test sockmap-public-api 1 DAE_RUN_SOCKMAP_LIFECYCLE_SMOKE \
+  dae-ebpf-support aya-loader kernel_public_staging_and_parity_preserve_ready_and_socket_identity
+run_listener_lifecycle_test listener-update-evidence 1 DAE_RUN_SOCKMAP_LIFECYCLE_SMOKE \
+  dae-ebpf-loader native-ebpf real_update_map_reports_only_keys_written_by_this_invocation
+run_listener_lifecycle_test listener-handoff 1 DAE_RUN_LISTENER_HANDOFF_SMOKE \
+  dae-ebpf-loader native-ebpf real_open_handoff_publishes_only_after_adoption_and_reclaims_failures
 
 process_tree_pids() {
   local root_pid="$1"
@@ -158,7 +217,7 @@ run_with_resource_sample() {
 
 echo "running native eBPF runtime gate: root=$run_root backend=$backend netns_link=$netns_link object=$native_object_mode timeout=$runtime_timeout"
 : >"$cargo_log"
-if ! cargo build --manifest-path Cargo.toml \
+if ! cargo build --locked --manifest-path Cargo.toml \
   -p dae-daemon \
   --features native-ebpf \
   --bin daed-contract-runner \
@@ -241,7 +300,7 @@ required = [
     "dns_so_mark_upstream_socket_observed",
     "live_reload_executed",
     "production_listener_reused",
-    "production_bpf_owner_transferred",
+    "production_bpf_owner_continuity_verified",
     "production_dns_cache_migrated",
     "dns_cache_migration_guard_verified",
     "bounded_close_verified",
@@ -250,6 +309,21 @@ required = [
     "invalid_config_restore_verified",
 ]
 missing = [key for key in required if owner.get(key) is not True]
+continuity = (owner.get("reload_runtime") or {}).get("bpf_owner_continuity") or {}
+for key, expected in [("physical_owner_reused", True), ("published_socket_cookies_validated", True), ("active_slots_rewritten", False)]:
+    if continuity.get(key) is not expected:
+        missing.append("reload_runtime.bpf_owner_continuity." + key)
+if continuity.get("publication_outcome") != "AlreadyPublished":
+    missing.append("parity must observe an existing publication")
+cookies_before = continuity.get("cookies_before") or []
+if len(cookies_before) != 5 or cookies_before != continuity.get("cookies_after") or not all(cookies_before):
+    missing.append("observed cookie continuity")
+if owner.get("production_bpf_owner_transferred") != owner.get("production_bpf_owner_continuity_verified"):
+    missing.append("legacy owner continuity alias")
+publications = [step for step in owner.get("executed_steps", []) if step.get("name") == "synchronous-probe-listener-publication"]
+if len(publications) != 1 or publications[0].get("status") != "pass":
+    missing.append("synchronous probe consumer publication")
+
 
 native_steps = [
     step for step in owner.get("executed_steps", [])

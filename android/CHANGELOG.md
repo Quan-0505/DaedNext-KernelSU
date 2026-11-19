@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.1.0-alpha11 / Manager 0.1.17（待实机验收）
+
+- 核心更新至 DaeNext `c993cb15`，Android 版本为 `3.1.0-android-ksu.7`。同步 TCP/UDP 重定向容量、UDP 定时器、监听 socket 校验和物理接口挂载顺序修复。
+- 核心及嵌入式 eBPF 使用 Rust 1.100.0，保留 Android 蜂窝 socket mark 和纯 WAN 路由识别。
+- Web 面板更新至 DaedNext `96e4b2a`，调整侧栏版本显示并精简重复标题。
+
 ## v0.1.0-alpha10 / Manager 0.1.17
 
 - 首页与运行概况订阅核心现有的每秒 SSE 采样；不再每 6 秒读取完整概况，模块状态检查仍为 6 秒一次。离开指标页或后台后断开订阅，重连采用有上限的退避。

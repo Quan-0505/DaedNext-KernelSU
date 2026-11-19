@@ -127,21 +127,77 @@ impl NativeEbpfRuntimeState {
         }
     }
 
-    pub(in crate::production_runtime_owner) fn reset(&mut self) {
+    pub(in crate::production_runtime_owner) fn cleanup_evidence(&self) -> Option<Value> {
+        self.cleanup_report.clone()
+    }
+
+    pub(in crate::production_runtime_owner) fn reset(&mut self) -> Result<(), String> {
         #[cfg(feature = "native-ebpf")]
         {
+            let mut attempts = Vec::new();
+            if let Some(loaded) = self.loaded.as_mut() {
+                for _ in 0..3 {
+                    let result = loaded.cleanup_retained_links(None);
+                    let error = result.err();
+                    let stop_retry = error.as_ref().is_some_and(|error| {
+                        error.contains("Operation not permitted")
+                            || error.contains("Permission denied")
+                            || error.contains("foreign")
+                    });
+                    attempts.push(
+                        json!({"error": error, "pending": loaded.pending_attachment_count()}),
+                    );
+                    if error.is_none() || stop_retry {
+                        break;
+                    }
+                }
+                let pending = loaded.pending_attachment_count();
+                self.cleanup_report = Some(json!({
+                    "status": if pending == 0 { "pass" } else { "fail" },
+                    "pendingAttachments": pending, "attempts": attempts,
+                    "owners": loaded.pending_attachment_evidence(),
+                }));
+                if pending != 0 {
+                    // bpffs cannot store ordinary JSON. This directory refuses
+                    // automatic broad crash cleanup; the structured owner
+                    // evidence is written in the resident cleanup report.
+                    if let Some(root) = self.pin_root.as_ref()
+                        && let Err(error) = std::fs::create_dir_all(root.join("cleanup-pending"))
+                    {
+                        self.cleanup_report.as_mut().unwrap()["recoveryMarkerError"] =
+                            json!(error.to_string());
+                    }
+                    return Err(format!(
+                        "native attachments still pending: {}",
+                        self.cleanup_report.as_ref().unwrap()
+                    ));
+                }
+            }
+            // Pins are recovery evidence until all physical links are gone.
+            if let Some(pin_root) = self.pin_root.as_ref() {
+                match std::fs::remove_dir_all(pin_root) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        return Err(format!(
+                            "remove native owner pins {}: {error}",
+                            pin_root.display()
+                        ));
+                    }
+                }
+            }
+            self.pin_root.take();
             self.loaded.take();
+            self.peer_netns.take();
             self.loaded_map_ids.clear();
             self.load_input.take();
             self.pname_report.take();
-            if let Some(pin_root) = self.pin_root.take() {
-                let _ = std::fs::remove_dir_all(pin_root);
-            }
         }
         self.peer_attached = false;
         self.lan_attached = false;
         self.host_attached = false;
         self.cgroup_attached = false;
+        Ok(())
     }
 }
 
