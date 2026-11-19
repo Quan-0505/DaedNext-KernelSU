@@ -7,13 +7,13 @@ Python 3.10+、Git 即可重打包与运行时种子版本匹配的源码，Wind
 ```sh
 git clone https://github.com/Quan-0505/DaedNext-KernelSU.git
 cd DaedNext-KernelSU
-git switch --detach v0.1.0-alpha10
 python android/tools/fetch-runtime.py
+git switch --detach v0.1.0-alpha10
 python android/tools/seed-defaults.py
 python android/tools/package.py
 ```
 
-安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中。离线已有 alpha10 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip`；脚本校验锁定的 SHA256 后提取构建输入。
+先从当前源码恢复 alpha10 种子，再切换到 alpha10 标签并编辑服务或 WebUI。安装 ZIP 输出到 `android/dist/`，SHA256 显示在打包输出中。离线已有 alpha10 安装包时，可使用 `fetch-runtime.py --archive /path/to/DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip`。
 
 修改 App 后运行 `python android/manager/build.py`，将生成的 APK 复制到 `android/module/manager/DaedNext-Manager.apk`。App 构建需要 JDK 17、Android SDK 35 与 Build Tools 35.0.0，签名维护见 [管理器说明](../manager/README.md)。
 
