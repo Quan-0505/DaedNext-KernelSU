@@ -154,7 +154,8 @@ futures-util = "0.3"
 getrandom = "0.3"
 ghash = { version = "0.5", features = ["zeroize"] }
 hkdf = "0.12"
-libc = "0.2"
+# Aya 0.16 requires Android's SO_ATTACH_REUSEPORT_EBPF and SO_DETACH_REUSEPORT_BPF.
+libc = "0.2.190"
 md-5 = "0.10"
 object = { version = "0.36.7", default-features = false, features = ["elf", "read_core", "std"] }
 percent-encoding = "2.3"

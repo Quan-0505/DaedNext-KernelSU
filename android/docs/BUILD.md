@@ -7,6 +7,7 @@ Python 3.10+、Git 即可重打包与运行时种子版本匹配的源码，Wind
 ```sh
 git clone https://github.com/Quan-0505/DaedNext-KernelSU.git
 cd DaedNext-KernelSU
+git switch --detach v0.1.0-alpha10
 python android/tools/fetch-runtime.py
 python android/tools/seed-defaults.py
 python android/tools/package.py
