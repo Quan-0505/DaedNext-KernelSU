@@ -118,15 +118,20 @@ struct RouteCtx {
     ///
     /// Copy only the current word to bound callback stack use without retaining
     /// a map-value pointer or copying the entire 32-word bitmap.
+    #[cfg(not(feature = "android-fwmark"))]
     domain_word: u32,
     /// Word currently in `domain_word`, or [`DOMAIN_WORD_NONE`].
+    #[cfg(not(feature = "android-fwmark"))]
     domain_word_index: u16,
     /// Set once the map lookup has missed, so later rules skip the lookup.
+    #[cfg(not(feature = "android-fwmark"))]
     domain_absent: u8,
+    #[cfg(not(feature = "android-fwmark"))]
     domain_padding: u8,
 }
 
 /// Sentinel for [`RouteCtx::domain_word_index`]; a real index is `0..32`.
+#[cfg(not(feature = "android-fwmark"))]
 const DOMAIN_WORD_NONE: u16 = u16::MAX;
 
 impl RouteCtx {
@@ -140,9 +145,13 @@ impl RouteCtx {
             lpm_key_daddr: BpfLpmKey::zeroed(),
             lpm_key_mac: BpfLpmKey::zeroed(),
             state: 0,
+            #[cfg(not(feature = "android-fwmark"))]
             domain_word: 0,
+            #[cfg(not(feature = "android-fwmark"))]
             domain_word_index: DOMAIN_WORD_NONE,
+            #[cfg(not(feature = "android-fwmark"))]
             domain_absent: 0,
+            #[cfg(not(feature = "android-fwmark"))]
             domain_padding: 0,
         }
     }
@@ -275,7 +284,8 @@ unsafe fn set_lpm_key(key: *mut BpfLpmKey, ip: *const BpfIpBytes) {
 /// Keep cache accesses explicit to avoid the L2 WAN egress verifier regression
 /// produced by Rust 1.100 on Linux 6.12.
 #[inline(always)]
-unsafe fn domain_bitmap_hit_cached(ctx: *mut RouteCtx, index: u32) -> bool {
+#[cfg(not(feature = "android-fwmark"))]
+unsafe fn domain_bitmap_hit(ctx: *mut RouteCtx, index: u32) -> bool {
     unsafe {
         if ptr::addr_of!((*ctx).domain_absent).read_volatile() != 0 {
             return false;
@@ -294,6 +304,20 @@ unsafe fn domain_bitmap_hit_cached(ctx: *mut RouteCtx, index: u32) -> bool {
         }
         let bit_index = index & 31;
         ((ptr::addr_of!((*ctx).domain_word).read_volatile() >> bit_index) & 1) != 0
+    }
+}
+
+// The Android 6.6 verifier exceeds its WAN egress budget when the callback
+// also tracks per-packet domain cache state. Look up the same bitmap directly.
+#[inline(always)]
+#[cfg(feature = "android-fwmark")]
+unsafe fn domain_bitmap_hit(ctx: *mut RouteCtx, index: u32) -> bool {
+    unsafe {
+        let params = (*ctx).params;
+        let domain = lookup_domain_route(ptr::addr_of!((*params).daddr));
+        let word_index = ((index >> 5) & 31) as usize;
+        let bit_index = index & 31;
+        !domain.is_null() && (((*domain).bitmap[word_index] >> bit_index) & 1) != 0
     }
 }
 
@@ -450,7 +474,7 @@ extern "C" fn route_loop_cb(index: u32, data: *mut c_void) -> i64 {
                     route_state_or(ctx, ROUTE_GOOD_SUBRULE);
                 }
             } else if kind == MATCH_TYPE_DOMAIN_SET {
-                if domain_bitmap_hit_cached(ctx, index) {
+                if domain_bitmap_hit(ctx, index) {
                     route_state_or(ctx, ROUTE_GOOD_SUBRULE);
                 }
             } else if kind == MATCH_TYPE_PROCESS_NAME {

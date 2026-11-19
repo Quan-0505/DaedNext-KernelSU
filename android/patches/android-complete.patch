@@ -1577,7 +1577,7 @@ index 44617af9..e3351406 100644
  [dependencies]
  aya-ebpf.workspace = true
 diff --git a/crates/dae-ebpf-program/src/routing.rs b/crates/dae-ebpf-program/src/routing.rs
-index 21025d5f..132a8e4a 100644
+index 21025d5f..a1ac8caf 100644
 --- a/crates/dae-ebpf-program/src/routing.rs
 +++ b/crates/dae-ebpf-program/src/routing.rs
 @@ -14,7 +14,12 @@ use crate::packet::{self, IPPROTO_TCP, ParsedPacket};
@@ -1593,7 +1593,42 @@ index 21025d5f..132a8e4a 100644
  const LATENCY_PROBE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-latency\0\0\0\0";
  const GEODATA_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-geodata\0\0\0\0";
  const SUBSCRIPTION_PREPARE_HELPER_COMM: [u8; TASK_COMM_LEN] = *b"daed-subscript\0\0";
-@@ -192,6 +197,27 @@ pub fn pid_pname_for_packet(skb: *mut __sk_buff) -> *mut BpfPidPname {
+@@ -113,15 +118,20 @@ struct RouteCtx {
+     ///
+     /// Copy only the current word to bound callback stack use without retaining
+     /// a map-value pointer or copying the entire 32-word bitmap.
++    #[cfg(not(feature = "android-fwmark"))]
+     domain_word: u32,
+     /// Word currently in `domain_word`, or [`DOMAIN_WORD_NONE`].
++    #[cfg(not(feature = "android-fwmark"))]
+     domain_word_index: u16,
+     /// Set once the map lookup has missed, so later rules skip the lookup.
++    #[cfg(not(feature = "android-fwmark"))]
+     domain_absent: u8,
++    #[cfg(not(feature = "android-fwmark"))]
+     domain_padding: u8,
+ }
+ 
+ /// Sentinel for [`RouteCtx::domain_word_index`]; a real index is `0..32`.
++#[cfg(not(feature = "android-fwmark"))]
+ const DOMAIN_WORD_NONE: u16 = u16::MAX;
+ 
+ impl RouteCtx {
+@@ -135,9 +145,13 @@ impl RouteCtx {
+             lpm_key_daddr: BpfLpmKey::zeroed(),
+             lpm_key_mac: BpfLpmKey::zeroed(),
+             state: 0,
++            #[cfg(not(feature = "android-fwmark"))]
+             domain_word: 0,
++            #[cfg(not(feature = "android-fwmark"))]
+             domain_word_index: DOMAIN_WORD_NONE,
++            #[cfg(not(feature = "android-fwmark"))]
+             domain_absent: 0,
++            #[cfg(not(feature = "android-fwmark"))]
+             domain_padding: 0,
+         }
+     }
+@@ -192,6 +206,27 @@ pub fn pid_pname_for_packet(skb: *mut __sk_buff) -> *mut BpfPidPname {
      .cast::<BpfPidPname>()
  }
  
@@ -1621,7 +1656,7 @@ index 21025d5f..132a8e4a 100644
  #[inline(always)]
  pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) -> bool {
      if !pid_pname.is_null() {
-@@ -199,12 +225,12 @@ pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) ->
+@@ -199,12 +234,12 @@ pub fn pid_is_control_plane(skb: *mut __sk_buff, pid_pname: *mut BpfPidPname) ->
          if pid_tproxy != 0 && unsafe { (*pid_pname).pid } == pid_tproxy {
              return true;
          }
@@ -1636,7 +1671,47 @@ index 21025d5f..132a8e4a 100644
  }
  
  #[inline(always)]
-@@ -636,6 +662,33 @@ mod tests {
+@@ -249,7 +284,8 @@ unsafe fn set_lpm_key(key: *mut BpfLpmKey, ip: *const BpfIpBytes) {
+ /// Keep cache accesses explicit to avoid the L2 WAN egress verifier regression
+ /// produced by Rust 1.100 on Linux 6.12.
+ #[inline(always)]
+-unsafe fn domain_bitmap_hit_cached(ctx: *mut RouteCtx, index: u32) -> bool {
++#[cfg(not(feature = "android-fwmark"))]
++unsafe fn domain_bitmap_hit(ctx: *mut RouteCtx, index: u32) -> bool {
+     unsafe {
+         if ptr::addr_of!((*ctx).domain_absent).read_volatile() != 0 {
+             return false;
+@@ -271,6 +307,20 @@ unsafe fn domain_bitmap_hit_cached(ctx: *mut RouteCtx, index: u32) -> bool {
+     }
+ }
+ 
++// The Android 6.6 verifier exceeds its WAN egress budget when the callback
++// also tracks per-packet domain cache state. Look up the same bitmap directly.
++#[inline(always)]
++#[cfg(feature = "android-fwmark")]
++unsafe fn domain_bitmap_hit(ctx: *mut RouteCtx, index: u32) -> bool {
++    unsafe {
++        let params = (*ctx).params;
++        let domain = lookup_domain_route(ptr::addr_of!((*params).daddr));
++        let word_index = ((index >> 5) & 31) as usize;
++        let bit_index = index & 31;
++        !domain.is_null() && (((*domain).bitmap[word_index] >> bit_index) & 1) != 0
++    }
++}
++
+ #[inline(always)]
+ unsafe fn init_route_ctx(ctx: *mut RouteCtx, params: *const RouteParams) {
+     unsafe {
+@@ -424,7 +474,7 @@ extern "C" fn route_loop_cb(index: u32, data: *mut c_void) -> i64 {
+                     route_state_or(ctx, ROUTE_GOOD_SUBRULE);
+                 }
+             } else if kind == MATCH_TYPE_DOMAIN_SET {
+-                if domain_bitmap_hit_cached(ctx, index) {
++                if domain_bitmap_hit(ctx, index) {
+                     route_state_or(ctx, ROUTE_GOOD_SUBRULE);
+                 }
+             } else if kind == MATCH_TYPE_PROCESS_NAME {
+@@ -636,6 +686,33 @@ mod tests {
  
      const HELPER_PARENT_ARGV0_BASENAME: &[u8] = b"daed";
  
@@ -1670,6 +1745,120 @@ index 21025d5f..132a8e4a 100644
      fn process_name(bytes: &[u8]) -> [i8; TASK_COMM_LEN] {
          let mut out = [0; TASK_COMM_LEN];
          for (dst, src) in out.iter_mut().zip(bytes.iter().copied()) {
+diff --git a/crates/dae-ebpf-program/src/routing/cache_tests.rs b/crates/dae-ebpf-program/src/routing/cache_tests.rs
+index 65de1f9c..d82edadc 100644
+--- a/crates/dae-ebpf-program/src/routing/cache_tests.rs
++++ b/crates/dae-ebpf-program/src/routing/cache_tests.rs
+@@ -64,51 +64,58 @@ fn lookup_count() -> usize {
+ }
+ 
+ #[test]
+-fn domain_cache_reuses_hits_and_unset_bits_in_one_word() {
++fn domain_rules_match_hits_and_unset_bits_in_one_word() {
+     install(&[1, 31]);
+     let params = RouteParams::zeroed();
+     let mut ctx = context(&params);
+     for (index, expected) in [(1, true), (2, false), (31, true), (0, false)] {
+         assert_eq!(
+-            unsafe { domain_bitmap_hit_cached(&mut ctx, index) },
++            unsafe { domain_bitmap_hit(&mut ctx, index) },
+             expected
+         );
+     }
++    #[cfg(not(feature = "android-fwmark"))]
+     assert_eq!(lookup_count(), 1);
++    #[cfg(feature = "android-fwmark")]
++    assert_eq!(lookup_count(), 4);
+ }
+ 
+ #[test]
+-fn domain_cache_refreshes_at_word_boundaries_and_last_rule() {
++fn domain_rules_match_at_word_boundaries_and_last_rule() {
+     install(&[31, 32, 63, 64, 1023]);
+     let params = RouteParams::zeroed();
+     let mut ctx = context(&params);
+     for index in [31, 32, 63, 64, 1023] {
+-        assert!(unsafe { domain_bitmap_hit_cached(&mut ctx, index) });
++        assert!(unsafe { domain_bitmap_hit(&mut ctx, index) });
+     }
++    #[cfg(not(feature = "android-fwmark"))]
+     assert_eq!(lookup_count(), 4);
++    #[cfg(feature = "android-fwmark")]
++    assert_eq!(lookup_count(), 5);
+ }
+ 
+ #[test]
++#[cfg(not(feature = "android-fwmark"))]
+ fn domain_miss_is_cached_only_until_the_next_packet() {
+     install(&[]);
+     FIXTURE.with(|fixture| fixture.borrow_mut().domain = None);
+     let mut params = RouteParams::zeroed();
+     params.daddr.u6_addr8[15] = 1;
+     let mut ctx = context(&params);
+-    assert!(!unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
++    assert!(!unsafe { domain_bitmap_hit(&mut ctx, 1) });
+     FIXTURE.with(|fixture| {
+         let mut domain = BpfDomainRouting::default();
+         domain.bitmap[0] = 2;
+         fixture.borrow_mut().domain = Some(domain);
+     });
+-    assert!(!unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
+-    assert!(!unsafe { domain_bitmap_hit_cached(&mut ctx, 1023) });
++    assert!(!unsafe { domain_bitmap_hit(&mut ctx, 1) });
++    assert!(!unsafe { domain_bitmap_hit(&mut ctx, 1023) });
+     assert_eq!(lookup_count(), 1);
+     unsafe { init_route_ctx(&mut ctx, &params) };
+-    assert!(unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
++    assert!(unsafe { domain_bitmap_hit(&mut ctx, 1) });
+     params.daddr.u6_addr8[15] = 2;
+     unsafe { init_route_ctx(&mut ctx, &params) };
+-    assert!(unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
++    assert!(unsafe { domain_bitmap_hit(&mut ctx, 1) });
+     FIXTURE.with(|fixture| {
+         let fixture = fixture.borrow();
+         assert_eq!(fixture.lookups.len(), 3);
+@@ -119,19 +126,21 @@ fn domain_miss_is_cached_only_until_the_next_packet() {
+ }
+ 
+ #[test]
++#[cfg(not(feature = "android-fwmark"))]
+ fn updated_word_is_observed_on_the_next_packet() {
+     install(&[1]);
+     let params = RouteParams::zeroed();
+     let mut ctx = context(&params);
+-    assert!(unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
++    assert!(unsafe { domain_bitmap_hit(&mut ctx, 1) });
+     FIXTURE.with(|fixture| fixture.borrow_mut().domain.as_mut().unwrap().bitmap[0] = 0);
+-    assert!(unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
++    assert!(unsafe { domain_bitmap_hit(&mut ctx, 1) });
+     unsafe { init_route_ctx(&mut ctx, &params) };
+-    assert!(!unsafe { domain_bitmap_hit_cached(&mut ctx, 1) });
++    assert!(!unsafe { domain_bitmap_hit(&mut ctx, 1) });
+     assert_eq!(lookup_count(), 2);
+ }
+ 
+ #[test]
++#[cfg(not(feature = "android-fwmark"))]
+ fn context_initialization_clears_all_domain_cache_state() {
+     let params = RouteParams::zeroed();
+     let mut ctx = RouteCtx::zeroed();
+@@ -145,7 +154,7 @@ fn context_initialization_clears_all_domain_cache_state() {
+ }
+ 
+ #[test]
+-fn cached_domain_rules_preserve_or_and_negation_in_the_routing_callback() {
++fn domain_rules_preserve_or_and_negation_in_the_routing_callback() {
+     for (bits, port, expected) in [
+         (vec![1], 80, 7),
+         (vec![1, 2], 80, 0),
+@@ -191,6 +200,7 @@ fn cached_domain_rules_preserve_or_and_negation_in_the_routing_callback() {
+             }
+         }
+         assert_eq!(ctx.result, expected, "bitmap={bits:?}, port={port}");
++        #[cfg(not(feature = "android-fwmark"))]
+         assert_eq!(lookup_count(), 1);
+     }
+ }
 diff --git a/crates/dae-ebpf-support/src/aya_loader.rs b/crates/dae-ebpf-support/src/aya_loader.rs
 index 6ecdc116..d37e3d50 100644
 --- a/crates/dae-ebpf-support/src/aya_loader.rs
