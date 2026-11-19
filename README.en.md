@@ -21,7 +21,7 @@
 
 > This project is in **alpha testing**. Compatibility is limited to the devices, system builds and scenarios covered by validation.
 
-The current release is **alpha10 / Manager 0.1.17** with shared KernelSU, Magisk and APatch installation/service scripts and an **eBPF-only** policy. Only KernelSU has device validation; Magisk/APatch currently have isolated script tests, not device certification. This update fixes metric refresh and stale rates during speed tests using one-second core samples, while retaining glass navigation, SmartLink and Chinese/English language options. See the [device adapter contract](android/docs/DEVICE-ADAPTER.md).
+The current release is **alpha11 / Manager 0.1.17**. It updates the upstream DaeNext core and fixes Android eBPF peer namespace resolution and cellular egress verification. KernelSU was tested on a OnePlus 13. Magisk and APatch passed isolated script tests. See the [device adapter contract](android/docs/DEVICE-ADAPTER.md).
 
 ## Overview
 
@@ -60,9 +60,9 @@ Tap the image to open the full-resolution version. Use pinch-to-zoom on mobile.
 | Kernel capabilities | Kernel 5.17+ with compatible eBPF/TC, BTF, veth and network namespaces. Passing the version check does not replace load, attach and traffic validation. |
 | Verified device | OnePlus 13 / PJZ110, Android 17 / SDK 37. |
 | Verified kernel | `6.6.118-android15` AGKI, SELinux Enforcing. |
-| Current release | Package `v0.1.0-alpha10`, Manager `0.1.17`; retains the alpha7 core `3.1.0-android-ksu.6`. |
+| Current release | Package `v0.1.0-alpha11`, Manager `0.1.17`, core `3.1.0-android-ksu.7`. |
 
-alpha10 packages Manager 0.1.17 with one-second core metric subscriptions, stale-rate handling and single-line adaptive metric text. Traffic counts proxy forwarding only, excluding direct speed tests. CPU is measured per core, so multicore usage can exceed 100%. The user confirmed a successful Ookla retest over 5G on OnePlus 13. Module scripts share Root manager interfaces; the core remains 3.1.0-android-ksu.6 and uses eBPF only. OnePlus 13 checks cover service scripts, Wi-Fi/cellular transitions, app-UID HTTPS 204, language switching and native pages. Magisk/APatch have isolated script tests only. Cold boot and a full ZIP installation were not repeated; see the validation log.
+On a OnePlus 13, alpha11 passed an upgrade from alpha7, cold boot on cellular, round trips between Wi-Fi and 5G, and HTTPS traffic from Chrome. The upgrade preserved the existing account, node, subscription and Wi-Fi policy records.
 
 Vendor restrictions prevent cgroup attachment on the verified device, so avoid `pname()` process-name routing. Validation does not cover every UDP/QUIC or IPv6 scenario, other devices, Play Store installation flows or purchases. See [validation details](android/docs/VALIDATION.md).
 
@@ -72,9 +72,9 @@ Vendor restrictions prevent cgroup attachment on the verified device, so avoid `
 
 Download the ARM64 ZIP from the [latest release](https://github.com/Quan-0505/DaedNext-KernelSU/releases/latest), install it through KernelSU, then reboot.
 
-Current release asset: [`DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha10/DaedNext-KernelSU-v0.1.0-alpha10-arm64.zip). Releases provide two assets: the module ZIP and a standalone APK.
+Current release asset: [`DaedNext-KernelSU-v0.1.0-alpha11-arm64.zip`](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha11/DaedNext-KernelSU-v0.1.0-alpha11-arm64.zip). Releases provide two assets: the module ZIP and a standalone APK.
 
-Standalone app: [DaedNext-Manager-v0.1.17.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha10/DaedNext-Manager-v0.1.17.apk). The same ZIP also includes `manager/DaedNext-Manager.apk`. Extract and install it, grant **DaedNext** superuser access in KernelSU, then open the app. Existing accounts, nodes, subscriptions and Wi-Fi policies are retained. The module does not install the app automatically. See the [Android manager guide](android/manager/README.md).
+Standalone app: [DaedNext-Manager-v0.1.17.apk](https://github.com/Quan-0505/DaedNext-KernelSU/releases/download/v0.1.0-alpha11/DaedNext-Manager-v0.1.17.apk). The same ZIP also includes `manager/DaedNext-Manager.apk`. Extract and install it, grant **DaedNext** superuser access in KernelSU, then open the app. Existing accounts, nodes, subscriptions and Wi-Fi policies are retained. The module does not install the app automatically. See the [Android manager guide](android/manager/README.md).
 
 Stop other transparent proxy cores or VPNs before installation. The module checks for conflicting processes, but that check does not cover every possible competing proxy.
 

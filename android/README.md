@@ -1,6 +1,6 @@
 # KernelSU Android integration
 
-当前发布为 **v0.1.0-alpha10**（Manager **0.1.17**，核心 **3.1.0-android-ksu.6**）。源码中的 **alpha11** 更新至核心 **3.1.0-android-ksu.7**，已在一加 13 上通过 [KernelSU 实测](docs/VALIDATION.md)。
+当前发布为 **v0.1.0-alpha11**（Manager **0.1.17**，核心 **3.1.0-android-ksu.7**），已在一加 13 上通过 [KernelSU 实测](docs/VALIDATION.md)。
 
 本目录只包含可公开维护的模块源码、空白默认配置生成器、构建入口和 Android 补丁。Rust 核心完整源码位于仓库根目录，已经包含 Android 修改，克隆后不要重复应用补丁。
 
