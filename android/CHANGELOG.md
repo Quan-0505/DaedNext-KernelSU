@@ -4,6 +4,7 @@
 
 - 核心更新至 DaeNext `c993cb15`，Android 版本为 `3.1.0-android-ksu.7`。同步 TCP/UDP 重定向容量、UDP 定时器、监听 socket 校验和物理接口挂载顺序修复。
 - 核心及嵌入式 eBPF 使用 Rust 1.100.0，保留 Android 蜂窝 socket mark 和纯 WAN 路由识别。
+- eBPF 对端命名空间的保留和挂载使用同一套 Android 路径解析，修复部分设备从 Wi-Fi 直连切到蜂窝时核心无法启动。
 - Web 面板更新至 DaedNext `96e4b2a`，调整侧栏版本显示并精简重复标题。
 
 ## v0.1.0-alpha10 / Manager 0.1.17

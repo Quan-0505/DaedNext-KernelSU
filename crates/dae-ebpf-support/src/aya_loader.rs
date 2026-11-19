@@ -39,6 +39,7 @@ pub use self::cgroup::*;
 mod cgroup_preflight;
 pub use self::cgroup_preflight::*;
 mod netns;
+pub use self::netns::open_network_namespace;
 use self::netns::*;
 mod lpm_pinning;
 use self::lpm_pinning::LoadPinTransaction;

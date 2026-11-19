@@ -115,7 +115,7 @@ impl NativeEbpfRuntimeState {
                     "native peer attach requires its network namespace".to_owned()
                 })?;
             Some(
-                std::fs::File::open(Path::new("/run/netns").join(netns))
+                dae_ebpf_support::aya_loader::open_network_namespace(netns)
                     .map_err(|err| format!("retain native peer namespace: {err}"))?,
             )
         } else {

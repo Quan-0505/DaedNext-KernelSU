@@ -1112,6 +1112,19 @@ index 33fd20e0..37a80712 100644
          .into_iter()
          .any(|parent| PathBuf::from(parent).join(name).exists())
  }
+diff --git a/crates/dae-daemon/src/production_runtime_owner/native_ebpf/attach_backend.rs b/crates/dae-daemon/src/production_runtime_owner/native_ebpf/attach_backend.rs
+index 1af67620..3e5a8232 100644
+--- a/crates/dae-daemon/src/production_runtime_owner/native_ebpf/attach_backend.rs
++++ b/crates/dae-daemon/src/production_runtime_owner/native_ebpf/attach_backend.rs
+@@ -115,7 +115,7 @@ impl NativeEbpfRuntimeState {
+                     "native peer attach requires its network namespace".to_owned()
+                 })?;
+             Some(
+-                std::fs::File::open(Path::new("/run/netns").join(netns))
++                dae_ebpf_support::aya_loader::open_network_namespace(netns)
+                     .map_err(|err| format!("retain native peer namespace: {err}"))?,
+             )
+         } else {
 diff --git a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs b/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
 index d30b7087..c5fe2f59 100644
 --- a/crates/dae-daemon/src/production_runtime_owner/resident/interface_monitor/network_state.rs
@@ -1657,11 +1670,23 @@ index 21025d5f..132a8e4a 100644
      fn process_name(bytes: &[u8]) -> [i8; TASK_COMM_LEN] {
          let mut out = [0; TASK_COMM_LEN];
          for (dst, src) in out.iter_mut().zip(bytes.iter().copied()) {
+diff --git a/crates/dae-ebpf-support/src/aya_loader.rs b/crates/dae-ebpf-support/src/aya_loader.rs
+index 6ecdc116..d37e3d50 100644
+--- a/crates/dae-ebpf-support/src/aya_loader.rs
++++ b/crates/dae-ebpf-support/src/aya_loader.rs
+@@ -39,6 +39,7 @@ pub use self::cgroup::*;
+ mod cgroup_preflight;
+ pub use self::cgroup_preflight::*;
+ mod netns;
++pub use self::netns::open_network_namespace;
+ use self::netns::*;
+ mod lpm_pinning;
+ use self::lpm_pinning::LoadPinTransaction;
 diff --git a/crates/dae-ebpf-support/src/aya_loader/netns.rs b/crates/dae-ebpf-support/src/aya_loader/netns.rs
-index 13507edf..72cebb77 100644
+index 13507edf..0b990e67 100644
 --- a/crates/dae-ebpf-support/src/aya_loader/netns.rs
 +++ b/crates/dae-ebpf-support/src/aya_loader/netns.rs
-@@ -56,13 +56,36 @@ impl Drop for NetnsGuard {
+@@ -56,13 +56,41 @@ impl Drop for NetnsGuard {
      }
  }
  
@@ -1686,18 +1711,23 @@ index 13507edf..72cebb77 100644
 -    } else {
 -        Path::new("/var/run/netns").join(netns)
 +        return path.to_owned();
-+    }
+     }
 +    let dirs = netns_dirs();
 +    for dir in &dirs {
 +        let candidate = dir.join(netns);
 +        if candidate.exists() {
 +            return candidate;
 +        }
-     }
++    }
 +    dirs.into_iter()
 +        .next()
 +        .unwrap_or_else(|| PathBuf::from("/var/run/netns"))
 +        .join(netns)
++}
++
++/// Retain the same named namespace used by the Aya attach path.
++pub fn open_network_namespace(netns: &str) -> io::Result<fs::File> {
++    fs::File::open(netns_path(netns))
  }
  
  pub(super) fn setns(fd: i32) -> io::Result<()> {

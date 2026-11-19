@@ -88,6 +88,11 @@ pub(super) fn netns_path(netns: &str) -> PathBuf {
         .join(netns)
 }
 
+/// Retain the same named namespace used by the Aya attach path.
+pub fn open_network_namespace(netns: &str) -> io::Result<fs::File> {
+    fs::File::open(netns_path(netns))
+}
+
 pub(super) fn setns(fd: i32) -> io::Result<()> {
     let status = unsafe { libc::setns(fd, libc::CLONE_NEWNET) };
     if status < 0 {
