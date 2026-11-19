@@ -1,5 +1,13 @@
 # Android 实测记录
 
+## alpha11 真机升级与切网 — 2026-11-19
+
+- 一加 13（PJZ110）、Android 17 / SDK 37、6.6.118 内核、KernelSU 3.3.1，SELinux Enforcing。通过 KernelSU 从 alpha7 升级并重启，验证修复版 ZIP 的安装及核心 `3.1.0-android-ksu.7` 的蜂窝冷启动。
+- 首轮发现对端命名空间 FD 的 Linux 路径假设。修正路径后，进一步发现蜂窝 WAN egress 超过了 6.6 内核的 verifier 指令预算。修复版在 Android 上直接查询域名规则位图，通过对端及蜂窝 TCX 入口、出口挂载。
+- 关闭 Wi-Fi 的冷启动后核心自动恢复。Chrome 使用 TLS 1.3 访问 Google 和 YouTube，均得到未缓存的 HTTP 204，测试期间代理上传、下载累计值增长。开启 Wi-Fi 后命中原黑名单并自动直连，Chrome 直连 HTTPS 返回 200。再次切到 5G 并回到 Wi-Fi，分别恢复代理及直连，daemon PID 保持一致。
+- 升级前后核对账户、节点和订阅记录 ID 以及 Wi-Fi 策略文件。实测结束时 Wi-Fi 和移动数据均开启，原 Wi-Fi 自动直连生效。此轮验收覆盖该设备上的 KernelSU 与 TCP HTTPS。
+- 修复版 ZIP SHA256：`3ce6ff506defa6bbffd7c9a01d5f4e6aa2806568e5fe6874ae116232fb1627c6`。
+
 ## alpha10 发布包核验 — 2026-11-03
 
 - 模块 v0.1.0-alpha10，内含原签名 Manager 0.1.17；独立 APK 与 ZIP 内 APK 逐字节一致。ZIP CRC、133 项安装载荷 SHA256、安装引导权限、空白默认数据库及原 APK 签名检查通过。
