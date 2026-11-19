@@ -1,6 +1,7 @@
 use super::*;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::path::PathBuf;
 
 use crate::runtime_maps::{delete_map_elem_bytes, lookup_map_elem_bytes};
 
@@ -160,7 +161,14 @@ impl ListenerPublication {
     }
 }
 fn writer_lock() -> io::Result<File> {
-    std::fs::create_dir_all("/run/lock")?;
+    #[cfg(target_os = "android")]
+    let lock_dir = std::env::var_os("DAE_RUNTIME_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map_or_else(|| PathBuf::from("/data/adb/daenext/run"), PathBuf::from);
+    #[cfg(not(target_os = "android"))]
+    let lock_dir = PathBuf::from("/run/lock");
+
+    std::fs::create_dir_all(&lock_dir)?;
     let lock = OpenOptions::new()
         .read(true)
         .write(true)
@@ -168,7 +176,7 @@ fn writer_lock() -> io::Result<File> {
         .truncate(false)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
-        .open("/run/lock/dae-listener-map.lock")?;
+        .open(lock_dir.join("dae-listener-map.lock"))?;
     let metadata = lock.metadata()?;
     if !metadata.is_file() || metadata.uid() != unsafe { libc::geteuid() } || metadata.nlink() != 1
     {
@@ -219,7 +227,12 @@ fn validate_socket(fd: i32, tcp: bool) -> io::Result<u64> {
             "expected IP TCP listener / UDP socket",
         ));
     }
-    socket_option(fd, libc::SO_COOKIE)
+    // The Android NDK exposes SO_COOKIE in the Linux UAPI socket header.
+    #[cfg(target_os = "android")]
+    const SO_COOKIE: libc::c_int = 57;
+    #[cfg(not(target_os = "android"))]
+    const SO_COOKIE: libc::c_int = libc::SO_COOKIE;
+    socket_option(fd, SO_COOKIE)
 }
 
 #[cfg(test)]
